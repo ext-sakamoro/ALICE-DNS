@@ -1,0 +1,44 @@
+[package]
+name = "alice-dns"
+version = "0.1.0"
+edition = "2021"
+authors = ["Moroya Sakamoto"]
+description = "ALICE DNS Ad-Blocker — Bloom Filter O(1) domain blocking for Raspberry Pi"
+license = "MIT"
+repository = "https://github.com/ext-sakamoro/ALICE-DNS"
+keywords = ["dns", "adblock", "bloom-filter", "raspberry-pi", "privacy"]
+categories = ["network-programming", "command-line-utilities"]
+
+[lib]
+name = "alice_dns"
+path = "src/lib.rs"
+
+[[bin]]
+name = "alice-dns"
+path = "src/main.rs"
+
+[features]
+default = []
+analytics = ["dep:alice-analytics"]
+crypto = ["dep:alice-crypto"]
+
+[dependencies]
+# ALICE Ecosystem
+alice-cache = { path = "../ALICE-Cache" }
+
+# Optional ALICE integrations
+alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false }
+alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false

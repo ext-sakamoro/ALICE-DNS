@@ -84,7 +84,23 @@ ALICE-DNS は ALICE クレートエコシステムのコンポーネントを再
 | クエリ分析 (HLL, CMS, DDS) | **ALICE-Analytics** (オプション) | ダッシュボード代替 |
 | リリースプロファイル (LTO=fat, strip) | ALICE カリカリ最適化 | 453KB バイナリ |
 
-## Raspberry Pi 導入ガイド (ステップバイステップ)
+## クイックインストール (Rust不要)
+
+```bash
+# ワンライナーでインストール — ビルド済みバイナリをダウンロードして自動設定
+curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install.sh | sudo bash
+```
+
+手動でインストールする場合:
+
+```bash
+# Raspberry Pi (aarch64) 用ビルド済みバイナリをダウンロード
+curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns
+chmod +x alice-dns
+sudo ./alice-dns
+```
+
+## Raspberry Pi 導入ガイド (ソースからビルド)
 
 Raspberry Pi 上でゼロからビルド・本番投入するまでの完全手順です。Pi 5 で実証済み。
 

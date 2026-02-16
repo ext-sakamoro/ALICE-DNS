@@ -283,8 +283,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None => continue, // Malformed — drop silently
         };
 
-        // Check Bloom filter
-        let response = if bloom_engine.should_block(&query.qname) {
+        // Block DDR (Discovery of Designated Resolvers, RFC 9462)
+        // Prevents iOS/macOS from discovering upstream DoH/DoT and bypassing local DNS
+        let response = if query.qname.ends_with("_dns.resolver.arpa") || query.qname == "_dns.resolver.arpa" {
+            let latency = query_start.elapsed().as_micros() as u64;
+            stats.record_query(&query.qname, true, latency);
+            dns::build_nxdomain_response(packet, &query)
+        } else if bloom_engine.should_block(&query.qname) {
             // BLOCKED
             let latency = query_start.elapsed().as_micros() as u64;
             stats.record_query(&query.qname, true, latency);

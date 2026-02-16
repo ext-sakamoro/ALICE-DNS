@@ -84,7 +84,23 @@ ALICE-DNS reuses components from the ALICE crate ecosystem:
 | Query Analytics (HLL, CMS, DDS) | **ALICE-Analytics** (optional) | Dashboard replacement |
 | Release Profile (LTO=fat, strip) | ALICE カリカリ methodology | 453KB binary |
 
-## Raspberry Pi Deployment Guide (Step by Step)
+## Quick Install (No Rust Required)
+
+```bash
+# One-line install — downloads pre-built binary and sets up everything
+curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install.sh | sudo bash
+```
+
+Or manually:
+
+```bash
+# Download pre-built binary for Raspberry Pi (aarch64)
+curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns
+chmod +x alice-dns
+sudo ./alice-dns
+```
+
+## Raspberry Pi Deployment Guide (Build from Source)
 
 Complete guide to build and deploy from scratch on a Raspberry Pi. Verified on Pi 5.
 

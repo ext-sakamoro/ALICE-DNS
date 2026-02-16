@@ -1,0 +1,112 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: alice-dns-aarch64-linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: alice-dns-x86_64-linux
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: alice-dns-aarch64-macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout ALICE-DNS
+        uses: actions/checkout@v4
+
+      - name: Checkout ALICE-Cache
+        uses: actions/checkout@v4
+        with:
+          repository: ext-sakamoro/ALICE-Cache
+          path: ../ALICE-Cache
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          cp target/${{ matrix.target }}/release/alice-dns ${{ matrix.name }}
+          chmod +x ${{ matrix.name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            alice-dns-aarch64-linux/alice-dns-aarch64-linux
+            alice-dns-x86_64-linux/alice-dns-x86_64-linux
+            alice-dns-aarch64-macos/alice-dns-aarch64-macos
+          body: |
+            ## ALICE-DNS ${{ github.ref_name }}
+
+            Bloom Filter DNS Ad-Blocker — Pi-hole replacement in 453KB.
+
+            ### Pre-built Binaries
+
+            | File | Platform | Architecture |
+            |------|----------|-------------|
+            | `alice-dns-aarch64-linux` | Linux (Raspberry Pi) | ARM64 / aarch64 |
+            | `alice-dns-x86_64-linux` | Linux (x86_64) | x86_64 |
+            | `alice-dns-aarch64-macos` | macOS (Apple Silicon) | ARM64 / aarch64 |
+
+            ### Quick Install (Raspberry Pi)
+
+            ```bash
+            curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns
+            chmod +x alice-dns
+            sudo ./alice-dns
+            ```
+
+            Or use the full installer:
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install.sh | sudo bash
+            ```

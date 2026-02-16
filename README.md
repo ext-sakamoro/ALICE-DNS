@@ -2,6 +2,8 @@
 
 **Bloom Filter DNS Ad-Blocker — Pi-hole replacement in 453KB**
 
+[日本語版 README はこちら](README_ja.md)
+
 ALICE-DNS is an ultra-lightweight DNS ad-blocker for Raspberry Pi that replaces Pi-hole with a single Rust binary. It uses a 512KB Bloom filter for O(1) domain lookup, backed by ALICE-Cache for intelligent DNS response caching.
 
 ## Architecture
@@ -31,11 +33,11 @@ ALICE-DNS is an ultra-lightweight DNS ad-blocker for Raspberry Pi that replaces 
  └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Benchmark: Pi-hole vs ALICE-DNS (実機計測)
+## Benchmark: Pi-hole vs ALICE-DNS (Measured on Real Hardware)
 
-Raspberry Pi 5 での実測値（2026-02-16）。Pi-hole v6.3 (FTL v6.4.1) を ALICE-DNS で置き換えた結果。
+Actual measurements on Raspberry Pi 5 (2026-02-16). Results from replacing Pi-hole v6.3 (FTL v6.4.1) with ALICE-DNS.
 
-**計測環境:**
+**Test Environment:**
 
 | Item | Detail |
 |------|--------|
@@ -46,7 +48,7 @@ Raspberry Pi 5 での実測値（2026-02-16）。Pi-hole v6.3 (FTL v6.4.1) を A
 | Replaced | Pi-hole v6.3 / FTL v6.4.1 |
 | Blocklist | StevenBlack/hosts (unified hosts) |
 
-**比較結果:**
+**Results:**
 
 | Metric | Pi-hole FTL | ALICE-DNS | Improvement |
 |--------|------------|-----------|-------------|
@@ -59,9 +61,9 @@ Raspberry Pi 5 での実測値（2026-02-16）。Pi-hole v6.3 (FTL v6.4.1) を A
 | **Dependencies** | C + SQLite + PHP + lighttpd | **Rust only** | Zero runtime deps |
 | **Build time (Pi 5)** | N/A | **19 sec** | From source |
 
-### Test Results (Raspberry Pi 5 実測)
+### Test Results (Raspberry Pi 5, Actual Measurement)
 
-ポート53で稼働中の ALICE-DNS に対して `dig @127.0.0.1` で計測。
+Measured with `dig @127.0.0.1` against ALICE-DNS running on port 53.
 
 ```
 doubleclick.net       → 0.0.0.0           (BLOCKED)
@@ -82,64 +84,64 @@ ALICE-DNS reuses components from the ALICE crate ecosystem:
 | Query Analytics (HLL, CMS, DDS) | **ALICE-Analytics** (optional) | Dashboard replacement |
 | Release Profile (LTO=fat, strip) | ALICE カリカリ methodology | 453KB binary |
 
-## Raspberry Pi 導入ガイド (Step by Step)
+## Raspberry Pi Deployment Guide (Step by Step)
 
-Raspberry Pi 上でゼロからビルド・本番投入するまでの手順。Pi 5 で実証済み。
+Complete guide to build and deploy from scratch on a Raspberry Pi. Verified on Pi 5.
 
-### Step 1: Rust インストール (初回のみ)
+### Step 1: Install Rust (one-time)
 
 ```bash
-# Rust toolchain インストール (~2分)
+# Install Rust toolchain (~2 min)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 
-# 確認
-rustc --version   # rustc 1.93.1 以上
+# Verify
+rustc --version   # rustc 1.93.1 or later
 cargo --version
 ```
 
-### Step 2: ソース取得
+### Step 2: Get Source
 
 ```bash
 git clone https://github.com/ext-sakamoro/ALICE-DNS.git
 git clone https://github.com/ext-sakamoro/ALICE-Cache.git
 
-# ALICE-Cache は ALICE-DNS と同じ階層に配置
+# ALICE-Cache must be in the same parent directory as ALICE-DNS
 # ~/ALICE-DNS/
 # ~/ALICE-Cache/
 ```
 
-### Step 3: ビルド
+### Step 3: Build
 
 ```bash
 cd ~/ALICE-DNS
 cargo build --release
-# Pi 5: ~19秒、Pi 4: ~60秒 (目安)
+# Pi 5: ~19 sec, Pi 4: ~60 sec (estimate)
 
-# 確認
+# Verify
 ls -lh target/release/alice-dns
 # → 453KB, ELF 64-bit aarch64
 ```
 
-### Step 4: インストール & Pi-hole 置き換え
+### Step 4: Install & Replace Pi-hole
 
 ```bash
-# バイナリ配置
+# Install binary
 sudo cp target/release/alice-dns /usr/local/bin/
 sudo chmod 755 /usr/local/bin/alice-dns
 
-# 設定ディレクトリ作成
+# Create config directory
 sudo mkdir -p /etc/alice-dns
 
-# ブロックリスト更新スクリプト配置
+# Install blocklist update script
 sudo cp update-blocklist.py /etc/alice-dns/
 sudo chmod 755 /etc/alice-dns/update-blocklist.py
 
-# 初回ブロックリストダウンロード (StevenBlack/hosts, ~79K domains)
+# Download initial blocklist (StevenBlack/hosts, ~79K domains)
 sudo python3 /etc/alice-dns/update-blocklist.py
 ```
 
-### Step 5: systemd サービス登録
+### Step 5: Register systemd Service
 
 ```bash
 sudo tee /etc/systemd/system/alice-dns.service > /dev/null << 'EOF'
@@ -171,7 +173,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### Step 6: ブロックリスト自動更新 (cron)
+### Step 6: Automatic Blocklist Updates (cron)
 
 ```bash
 sudo tee /etc/cron.d/alice-dns > /dev/null << 'EOF'
@@ -180,33 +182,33 @@ sudo tee /etc/cron.d/alice-dns > /dev/null << 'EOF'
 EOF
 ```
 
-### Step 7: Pi-hole 停止 → ALICE-DNS 起動
+### Step 7: Stop Pi-hole → Start ALICE-DNS
 
 ```bash
-# Pi-hole を停止・無効化
+# Stop and disable Pi-hole
 sudo systemctl stop pihole-FTL
 sudo systemctl disable pihole-FTL
 
-# ALICE-DNS を起動・有効化
+# Start and enable ALICE-DNS
 sudo systemctl daemon-reload
 sudo systemctl enable alice-dns
 sudo systemctl start alice-dns
 
-# 動作確認
+# Verify
 sudo systemctl status alice-dns
 ```
 
-### Step 8: DNS 動作テスト
+### Step 8: DNS Test
 
 ```bash
-# ブロック対象 → 0.0.0.0 が返る
+# Blocked domains → returns 0.0.0.0
 dig @127.0.0.1 doubleclick.net A +short
 # → 0.0.0.0
 
 dig @127.0.0.1 google-analytics.com A +short
 # → 0.0.0.0
 
-# 通常ドメイン → 正常に解決される
+# Allowed domains → resolves normally
 dig @127.0.0.1 google.com A +short
 # → 142.251.x.x
 
@@ -214,7 +216,7 @@ dig @127.0.0.1 github.com A +short
 # → 20.27.177.113
 ```
 
-### Pi-hole に戻す場合
+### Restore Pi-hole
 
 ```bash
 sudo systemctl stop alice-dns
@@ -223,7 +225,7 @@ sudo systemctl enable pihole-FTL
 sudo systemctl start pihole-FTL
 ```
 
-## Build (その他の方法)
+## Build (Alternative Methods)
 
 ### On Raspberry Pi (recommended)
 
@@ -325,7 +327,8 @@ ALICE-DNS/
 │   └── stats.rs            # Query statistics (optional: ALICE-Analytics)
 ├── update-blocklist.py     # Cron blocklist updater (Python)
 ├── install.sh              # Raspberry Pi installer
-└── README.md
+├── README.md               # English
+└── README_ja.md            # Japanese
 ```
 
 ## How the Bloom Filter Works

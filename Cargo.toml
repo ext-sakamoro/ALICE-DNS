@@ -19,16 +19,10 @@ path = "src/main.rs"
 
 [features]
 default = []
-analytics = ["dep:alice-analytics"]
-crypto = ["dep:alice-crypto"]
 
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
-
-# Optional ALICE integrations
-alice-analytics = { path = "../ALICE-Analytics", optional = true, default-features = false }
-alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false }
 
 [profile.release]
 opt-level = 3

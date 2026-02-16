@@ -35,7 +35,7 @@ ALICE-DNS は Raspberry Pi 向けの超軽量 DNS 広告ブロッカーです。
 
 ## ベンチマーク: Pi-hole vs ALICE-DNS (実機計測)
 
-Raspberry Pi 5 での実測値（2026-02-16）。Pi-hole v6.3 (FTL v6.4.1) を ALICE-DNS で置き換えた結果です。
+Raspberry Pi 5 での実測値（2026-02-17）。Pi-hole v6.3 (FTL v6.4.1) を ALICE-DNS で置き換えた結果です。
 
 **計測環境:**
 
@@ -52,25 +52,32 @@ Raspberry Pi 5 での実測値（2026-02-16）。Pi-hole v6.3 (FTL v6.4.1) を A
 
 | 指標 | Pi-hole FTL | ALICE-DNS | 改善 |
 |------|------------|-----------|------|
-| **バイナリサイズ** | ~15 MB | **453 KB** | 33倍小さい |
-| **メモリ (RSS)** | 43 MB | **15 MB** | 2.9倍削減 |
+| **バイナリサイズ** | 26 MB | **453 KB** | **57倍小さい** |
+| **メモリ (RSS)** | 43 MB | **14.9 MB** | **2.9倍削減** |
+| **ディスク (DB/Filter)** | 11.3 MB | **512 KB** | **22倍小さい** |
+| **ブロック応答時間** | 3-5 ms | **0 ms** | **即応 (O(1))** |
+| **キャッシュ応答時間** | 1-3 ms | **0 ms** | **即応** |
 | **ブロックドメイン数** | 79,078 | **79,078** | 同等 |
 | **ドメイン検索** | SQLite SELECT | **O(1) Bloom** | 定数時間 |
 | **DNSキャッシュ** | dnsmasq 内蔵 | **ALICE-Cache** | Markov 先読み |
 | **Bloom Filter サイズ** | N/A | **512 KB** | 偽陽性率 <0.01% |
+| **Bloom 偽陽性** | N/A | **0件** (736クエリ中) | 設計通り |
+| **CPU使用率** | 1-3% | **0.0%** | ほぼゼロ |
 | **依存関係** | C + SQLite + PHP + lighttpd | **Rust のみ** | ランタイム依存ゼロ |
-| **ビルド時間 (Pi 5)** | N/A | **19秒** | ソースから |
+| **DDR バイパス防御** | なし | **あり** | DoH発見を阻止 |
+| **ビルド時間 (Pi 5)** | N/A | **12秒** | ソースから |
 
 ### テスト結果 (Raspberry Pi 5 実測)
 
 ポート53で稼働中の ALICE-DNS に対して `dig @127.0.0.1` で計測。
 
 ```
-doubleclick.net       → 0.0.0.0           (ブロック)
-google-analytics.com  → 0.0.0.0           (ブロック)
-google.com            → 142.251.169.139   (許可)
-github.com            → 20.27.177.113     (許可)
-amazon.co.jp          → 18.246.98.187     (許可)
+doubleclick.net       → 0.0.0.0  (ブロック, 0 ms)
+google-analytics.com  → 0.0.0.0  (ブロック, 0 ms)
+google.com            → 142.250.196.46   (許可)
+github.com            → 140.82.113.22    (許可)
+amazon.co.jp          → 18.246.98.187    (許可)
+_dns.resolver.arpa    → NXDOMAIN (DDRバイパス阻止)
 ```
 
 ## ALICE エコシステム統合

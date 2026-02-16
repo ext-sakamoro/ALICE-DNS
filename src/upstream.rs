@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use alice_cache::{AliceCache, CacheConfig};
 
-/// Maximum DNS response size (UDP).
-const MAX_DNS_RESPONSE: usize = 512;
+/// Maximum DNS response size (UDP, 4096 for EDNS support).
+const MAX_DNS_RESPONSE: usize = 4096;
 /// Query timeout for upstream DNS.
 const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(3);
 /// Maximum cache TTL (cap upstream TTLs to 1 hour).

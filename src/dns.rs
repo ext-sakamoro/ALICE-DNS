@@ -29,9 +29,9 @@
 const DNS_HEADER_SIZE: usize = 12;
 
 /// DNS record type: A (IPv4 address).
-const QTYPE_A: u16 = 1;
+pub const QTYPE_A: u16 = 1;
 /// DNS record type: AAAA (IPv6 address).
-const QTYPE_AAAA: u16 = 28;
+pub const QTYPE_AAAA: u16 = 28;
 /// DNS record class: IN (Internet).
 const QCLASS_IN: u16 = 1;
 

@@ -25,8 +25,8 @@ const DEFAULT_BLOCKLIST: &str = "/etc/alice-dns/blocklist.hosts";
 const DEFAULT_FILTER_BIN: &str = "/etc/alice-dns/filter.bin";
 /// Default listen address.
 const DEFAULT_LISTEN: &str = "0.0.0.0:53";
-/// Maximum UDP packet size.
-const MAX_PACKET_SIZE: usize = 512;
+/// Maximum UDP packet size (4096 for EDNS support).
+const MAX_PACKET_SIZE: usize = 4096;
 /// Stats print interval (queries).
 const STATS_INTERVAL: u64 = 10_000;
 
@@ -285,10 +285,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Check Bloom filter
         let response = if bloom_engine.should_block(&query.qname) {
-            // BLOCKED → return 0.0.0.0
+            // BLOCKED
             let latency = query_start.elapsed().as_micros() as u64;
             stats.record_query(&query.qname, true, latency);
-            dns::build_blocked_response(packet, &query)
+            // A → 0.0.0.0, AAAA → ::, other types → NXDOMAIN
+            if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
+                dns::build_blocked_response(packet, &query)
+            } else {
+                dns::build_nxdomain_response(packet, &query)
+            }
         } else {
             // ALLOWED → forward to upstream (with cache)
             match forwarder.forward(packet, &query.qname, query.qtype) {

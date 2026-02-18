@@ -189,6 +189,48 @@ pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> 
     resp
 }
 
+/// Build a DNS response that spoofs a domain with a custom IPv4 address.
+///
+/// Used for anti-adblock bypass: returns a real-looking IP (e.g. the Pi's own IP)
+/// so detection scripts think the domain is reachable, but actual content is empty.
+pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]) -> Vec<u8> {
+    let mut resp = Vec::with_capacity(query.question_end + 16);
+
+    // ── Header ──
+    resp.extend_from_slice(&query.id.to_be_bytes());
+    let rd = (query.flags >> 8) & 1;
+    let flags: u16 = 0x8000 | 0x0400 | (rd << 8) | 0x0080;
+    resp.extend_from_slice(&flags.to_be_bytes());
+    resp.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
+    resp.extend_from_slice(&1u16.to_be_bytes()); // ANCOUNT=1
+    resp.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
+    resp.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
+
+    // ── Question section (echo original) ──
+    resp.extend_from_slice(&query_packet[DNS_HEADER_SIZE..query.question_end]);
+
+    // ── Answer section ──
+    resp.extend_from_slice(&[0xC0, 0x0C]); // Name pointer
+
+    if query.qtype == QTYPE_AAAA {
+        // AAAA → return :: (no IPv6 spoof, forces fallback to A record)
+        resp.extend_from_slice(&QTYPE_AAAA.to_be_bytes());
+        resp.extend_from_slice(&QCLASS_IN.to_be_bytes());
+        resp.extend_from_slice(&60u32.to_be_bytes());   // TTL = 1 min (short)
+        resp.extend_from_slice(&16u16.to_be_bytes());
+        resp.extend_from_slice(&[0u8; 16]);              // ::
+    } else {
+        // A → return spoof IPv4
+        resp.extend_from_slice(&QTYPE_A.to_be_bytes());
+        resp.extend_from_slice(&QCLASS_IN.to_be_bytes());
+        resp.extend_from_slice(&60u32.to_be_bytes());   // TTL = 1 min (short)
+        resp.extend_from_slice(&4u16.to_be_bytes());
+        resp.extend_from_slice(&ipv4);                   // Custom IP
+    }
+
+    resp
+}
+
 /// Build an NXDOMAIN response (domain does not exist).
 ///
 /// Used as an alternative to 0.0.0.0 blocking.

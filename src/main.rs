@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use alice_dns::{
-    DnsBloomEngine, DnsStats, UpstreamForwarder,
+    DnsBloomEngine, DnsAction, DnsStats, UpstreamForwarder, NullServer,
     blocklist, dns, upstream::UpstreamResolver,
 };
 
@@ -30,11 +30,30 @@ const MAX_PACKET_SIZE: usize = 4096;
 /// Stats print interval (queries).
 const STATS_INTERVAL: u64 = 10_000;
 
+/// Default whitelist path.
+const DEFAULT_WHITELIST: &str = "/etc/alice-dns/whitelist.hosts";
+/// Default HTTP null server port.
+const DEFAULT_NULL_HTTP_PORT: u16 = 80;
+
+/// DNS blocking mode.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockMode {
+    /// Traditional: return 0.0.0.0 for blocked domains.
+    Block,
+    /// Neutralize: return Pi's IP + serve empty HTTP content.
+    /// Anti-adblock bypass: DNS resolves, clicks are prevented.
+    Neutralize,
+}
+
 struct Config {
     listen_addr: String,
     blocklist_path: PathBuf,
     filter_bin_path: PathBuf,
+    whitelist_path: PathBuf,
+    spoof_ip: [u8; 4],
     upstream_resolvers: Vec<UpstreamResolver>,
+    block_mode: BlockMode,
+    null_http_port: u16,
 }
 
 fn parse_args() -> Config {
@@ -43,10 +62,14 @@ fn parse_args() -> Config {
         listen_addr: DEFAULT_LISTEN.into(),
         blocklist_path: PathBuf::from(DEFAULT_BLOCKLIST),
         filter_bin_path: PathBuf::from(DEFAULT_FILTER_BIN),
+        whitelist_path: PathBuf::from(DEFAULT_WHITELIST),
+        spoof_ip: [192, 168, 11, 7], // Default: Raspberry Pi's LAN IP
         upstream_resolvers: vec![
             UpstreamResolver { addr: "1.1.1.1:53".into(), name: "Cloudflare".into() },
             UpstreamResolver { addr: "8.8.8.8:53".into(), name: "Google".into() },
         ],
+        block_mode: BlockMode::Block,
+        null_http_port: DEFAULT_NULL_HTTP_PORT,
     };
 
     let mut i = 1;
@@ -62,6 +85,12 @@ fn parse_args() -> Config {
                 i += 1;
                 if i < args.len() {
                     config.blocklist_path = PathBuf::from(&args[i]);
+                }
+            }
+            "--whitelist" | "-w" => {
+                i += 1;
+                if i < args.len() {
+                    config.whitelist_path = PathBuf::from(&args[i]);
                 }
             }
             "--upstream" | "-u" => {
@@ -82,6 +111,39 @@ fn parse_args() -> Config {
                             }
                         })
                         .collect();
+                }
+            }
+            "--spoof-ip" | "-s" => {
+                i += 1;
+                if i < args.len() {
+                    let parts: Vec<&str> = args[i].split('.').collect();
+                    if parts.len() == 4 {
+                        if let (Ok(a), Ok(b), Ok(c), Ok(d)) = (
+                            parts[0].parse::<u8>(), parts[1].parse::<u8>(),
+                            parts[2].parse::<u8>(), parts[3].parse::<u8>(),
+                        ) {
+                            config.spoof_ip = [a, b, c, d];
+                        }
+                    }
+                }
+            }
+            "--mode" | "-m" => {
+                i += 1;
+                if i < args.len() {
+                    config.block_mode = match args[i].as_str() {
+                        "neutralize" | "n" => BlockMode::Neutralize,
+                        "block" | "b" => BlockMode::Block,
+                        other => {
+                            eprintln!("Unknown mode: '{}'. Use 'block' or 'neutralize'.", other);
+                            std::process::exit(1);
+                        }
+                    };
+                }
+            }
+            "--null-port" => {
+                i += 1;
+                if i < args.len() {
+                    config.null_http_port = args[i].parse().unwrap_or(DEFAULT_NULL_HTTP_PORT);
                 }
             }
             "--version" | "-V" => {
@@ -112,9 +174,17 @@ fn print_help() {
     println!("Options:");
     println!("  -p, --port <PORT>          Listen port (default: 53)");
     println!("  -b, --blocklist <PATH>     Blocklist file path (hosts format)");
+    println!("  -w, --whitelist <PATH>     Whitelist file path (one domain per line)");
     println!("  -u, --upstream <ADDR,...>   Upstream DNS (default: 1.1.1.1,8.8.8.8)");
+    println!("  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)");
+    println!("  -m, --mode <MODE>          block (default) or neutralize");
+    println!("      --null-port <PORT>     HTTP null server port for neutralize mode (default: 80)");
     println!("  -V, --version              Print version");
     println!("  -h, --help                 Print help");
+    println!();
+    println!("Modes:");
+    println!("  block       Return 0.0.0.0 for blocked domains (traditional, may break anti-adblock)");
+    println!("  neutralize  Return Pi's IP + HTTP null server (anti-adblock bypass, click prevention)");
     println!();
     println!("Signals:");
     println!("  SIGHUP   Reload blocklist (hot-reload, zero downtime)");
@@ -122,6 +192,7 @@ fn print_help() {
     println!();
     println!("Files:");
     println!("  /etc/alice-dns/blocklist.hosts  Default blocklist (hosts format)");
+    println!("  /etc/alice-dns/whitelist.hosts  Default whitelist (one domain per line)");
     println!("  /etc/alice-dns/filter.bin       Binary Bloom filter (auto-generated)");
 }
 
@@ -170,6 +241,27 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
     }
 }
 
+fn load_whitelist(engine: &mut DnsBloomEngine, config: &Config) {
+    if config.whitelist_path.exists() {
+        match std::fs::read_to_string(&config.whitelist_path) {
+            Ok(content) => {
+                let domains: Vec<String> = content
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(|l| l.to_lowercase())
+                    .collect();
+                let count = domains.len();
+                engine.load_whitelist(&domains);
+                println!("  Whitelist: {} domains from {:?}", count, config.whitelist_path);
+            }
+            Err(e) => eprintln!("  Warning: Failed to read whitelist: {}", e),
+        }
+    } else {
+        println!("  Whitelist: none (no file at {:?})", config.whitelist_path);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args();
 
@@ -183,6 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("━━━ Loading Blocklist ━━━");
     let mut bloom_engine = DnsBloomEngine::new();
     load_blocklist(&mut bloom_engine, &config);
+    load_whitelist(&mut bloom_engine, &config);
     println!();
 
     // ── Initialize Upstream Forwarder ──
@@ -235,7 +328,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("ALICE-DNS is ready. {} domains blocked.", bloom_engine.domain_count());
+    // ── Start Null HTTP Server (neutralize mode only) ──
+    if config.block_mode == BlockMode::Neutralize {
+        println!("━━━ Null HTTP Server (Ad Neutralization) ━━━");
+        let null_server = NullServer::new(config.null_http_port);
+        match null_server.start_background() {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("  Error: Failed to start null HTTP server: {}", e);
+                eprintln!("  Port {} may be in use. Try --null-port <port>", config.null_http_port);
+                return Err(e.into());
+            }
+        }
+        println!();
+    }
+
+    let mode_str = match config.block_mode {
+        BlockMode::Block => "block (0.0.0.0)",
+        BlockMode::Neutralize => "neutralize (spoof IP + HTTP null)",
+    };
+    println!("ALICE-DNS is ready. {} blocked, {} whitelisted, mode: {}, spoof IP: {}.{}.{}.{}",
+        bloom_engine.domain_count(), bloom_engine.whitelist_count(), mode_str,
+        config.spoof_ip[0], config.spoof_ip[1], config.spoof_ip[2], config.spoof_ip[3]);
     println!("Send SIGHUP to reload, SIGUSR1 for stats, SIGTERM to stop.");
     println!();
 
@@ -252,9 +366,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if reload_flag.load(Ordering::Relaxed) {
             reload_flag.store(false, Ordering::Relaxed);
-            println!("\nReloading blocklist...");
+            println!("\nReloading blocklist + whitelist...");
             load_blocklist(&mut bloom_engine, &config);
-            println!("Reload complete. {} domains.", bloom_engine.domain_count());
+            load_whitelist(&mut bloom_engine, &config);
+            println!("Reload complete. {} blocked, {} whitelisted.",
+                bloom_engine.domain_count(), bloom_engine.whitelist_count());
         }
 
         if stats_flag.load(Ordering::Relaxed) {
@@ -289,30 +405,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let latency = query_start.elapsed().as_micros() as u64;
             stats.record_query(&query.qname, true, latency);
             dns::build_nxdomain_response(packet, &query)
-        } else if bloom_engine.should_block(&query.qname) {
-            // BLOCKED
-            let latency = query_start.elapsed().as_micros() as u64;
-            stats.record_query(&query.qname, true, latency);
-            // A → 0.0.0.0, AAAA → ::, other types → NXDOMAIN
-            if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
-                dns::build_blocked_response(packet, &query)
-            } else {
-                dns::build_nxdomain_response(packet, &query)
-            }
         } else {
-            // ALLOWED → forward to upstream (with cache)
-            match forwarder.forward(packet, &query.qname, query.qtype) {
-                Some(resp) => {
+            match bloom_engine.check_domain(&query.qname) {
+                DnsAction::Block => {
                     let latency = query_start.elapsed().as_micros() as u64;
-                    stats.record_query(&query.qname, false, latency);
-                    stats.cache_hits = forwarder.cache_hits;
-                    stats.cache_misses = forwarder.cache_misses;
-                    stats.upstream_errors = forwarder.upstream_errors;
-                    resp
+                    stats.record_query(&query.qname, true, latency);
+                    if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
+                        if config.block_mode == BlockMode::Neutralize {
+                            // NEUTRALIZE → spoof to Pi's IP (HTTP null server handles requests)
+                            dns::build_spoof_response(packet, &query, config.spoof_ip)
+                        } else {
+                            // BLOCK → 0.0.0.0 / :: (traditional)
+                            dns::build_blocked_response(packet, &query)
+                        }
+                    } else {
+                        dns::build_nxdomain_response(packet, &query)
+                    }
                 }
-                None => {
-                    stats.upstream_errors += 1;
-                    continue; // All upstreams failed — drop
+                DnsAction::Spoof => {
+                    // SPOOFED → return Pi's IP (anti-adblock bypass)
+                    let latency = query_start.elapsed().as_micros() as u64;
+                    stats.record_query(&query.qname, true, latency);
+                    if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
+                        dns::build_spoof_response(packet, &query, config.spoof_ip)
+                    } else {
+                        dns::build_nxdomain_response(packet, &query)
+                    }
+                }
+                DnsAction::Allow => {
+                    // ALLOWED → forward to upstream (with cache)
+                    match forwarder.forward(packet, &query.qname, query.qtype) {
+                        Some(resp) => {
+                            let latency = query_start.elapsed().as_micros() as u64;
+                            stats.record_query(&query.qname, false, latency);
+                            stats.cache_hits = forwarder.cache_hits;
+                            stats.cache_misses = forwarder.cache_misses;
+                            stats.upstream_errors = forwarder.upstream_errors;
+                            resp
+                        }
+                        None => {
+                            stats.upstream_errors += 1;
+                            continue; // All upstreams failed — drop
+                        }
+                    }
                 }
             }
         };

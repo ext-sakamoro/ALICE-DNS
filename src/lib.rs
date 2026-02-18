@@ -35,13 +35,15 @@ extern crate alloc;
 pub mod bloom;
 pub mod blocklist;
 pub mod dns;
+pub mod nullserver;
 pub mod stats;
 pub mod upstream;
 
 // Re-exports
-pub use bloom::DnsBloomEngine;
+pub use bloom::{DnsBloomEngine, DnsAction};
 pub use blocklist::parse_hosts;
-pub use dns::{parse_query, build_blocked_response, build_nxdomain_response, DnsQuery};
+pub use dns::{parse_query, build_blocked_response, build_spoof_response, build_nxdomain_response, DnsQuery};
+pub use nullserver::NullServer;
 pub use stats::DnsStats;
 pub use upstream::UpstreamForwarder;
 

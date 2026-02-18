@@ -16,6 +16,17 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// Action to take for a DNS query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DnsAction {
+    /// Forward to upstream DNS (not blocked, or exact whitelist match)
+    Allow,
+    /// Return 0.0.0.0 / :: (blocked domain)
+    Block,
+    /// Return spoof IP (blocked subdomain of whitelisted parent — anti-adblock bypass)
+    Spoof,
+}
+
 /// 512KB = 4,194,304 bits — enough for 80K domains at < 0.01% FP rate.
 ///
 /// Optimal formula: m = -n * ln(p) / (ln(2))^2
@@ -33,9 +44,12 @@ pub struct DnsBloomEngine {
     filter: Vec<u8>,
     /// Exact domain set for false-positive confirmation
     domains: BTreeSet<String>,
+    /// Whitelist — domains that bypass blocking (checked before Bloom filter)
+    whitelist: BTreeSet<String>,
     /// Statistics
     pub queries_total: u64,
     pub queries_blocked: u64,
+    pub queries_whitelisted: u64,
     pub bloom_false_positives: u64,
 }
 
@@ -45,8 +59,10 @@ impl DnsBloomEngine {
         Self {
             filter: alloc::vec![0u8; BLOOM_SIZE_BYTES],
             domains: BTreeSet::new(),
+            whitelist: BTreeSet::new(),
             queries_total: 0,
             queries_blocked: 0,
+            queries_whitelisted: 0,
             bloom_false_positives: 0,
         }
     }
@@ -124,22 +140,51 @@ impl DnsBloomEngine {
         out
     }
 
-    /// Check if a domain should be blocked.
+    /// Load whitelist domains. Whitelisted domains bypass blocking entirely.
+    pub fn load_whitelist(&mut self, domain_list: &[String]) {
+        self.whitelist.clear();
+        for domain in domain_list {
+            let d = fast_to_lower_bytes(domain.as_bytes());
+            let domain_str = unsafe { String::from_utf8_unchecked(d) };
+            self.whitelist.insert(domain_str);
+        }
+    }
+
+    /// Check what action to take for a domain.
     ///
-    /// Returns `true` if the domain (or any parent domain) is in the blocklist.
+    /// Returns `DnsAction::Allow`, `DnsAction::Block`, or `DnsAction::Spoof`.
     ///
     /// # Algorithm
     ///
-    /// 1. Normalize to lowercase (branchless)
-    /// 2. Check exact domain against Bloom filter — O(1)
-    /// 3. If Bloom says NO → definitely not blocked (zero false negatives)
-    /// 4. If Bloom says MAYBE → confirm against HashSet
-    /// 5. Walk up parent domains: `sub.ads.example.com` → `ads.example.com` → `example.com`
+    /// 0. Check whitelist (exact match) — if whitelisted, Allow immediately
+    /// 1. Walk domain hierarchy with Bloom filter + HashSet
+    /// 2. If blocked AND the matching blocklist entry is also whitelisted → Spoof
+    ///    (e.g. `0.html-load.com` blocked via parent `html-load.com` which is whitelisted)
+    /// 3. If blocked normally → Block
+    /// 4. Not blocked → Allow
     #[inline]
-    pub fn should_block(&mut self, domain: &str) -> bool {
+    pub fn check_domain(&mut self, domain: &str) -> DnsAction {
         self.queries_total += 1;
 
         let normalized = fast_to_lower_bytes(domain.as_bytes());
+
+        // Phase 0: Whitelist check — walk domain hierarchy
+        // e.g. "html-load.com" whitelisted → "0.html-load.com" also allowed
+        if !self.whitelist.is_empty() {
+            let mut ws = 0;
+            loop {
+                let seg = &normalized[ws..];
+                let seg_str = unsafe { core::str::from_utf8_unchecked(seg) };
+                if self.whitelist.contains(seg_str) {
+                    self.queries_whitelisted += 1;
+                    return DnsAction::Allow;
+                }
+                match seg.iter().position(|&b| b == b'.') {
+                    Some(dot) => ws += dot + 1,
+                    None => break,
+                }
+            }
+        }
 
         // Walk domain hierarchy: "sub.ads.example.com" → "ads.example.com" → "example.com"
         let mut start = 0;
@@ -152,8 +197,13 @@ impl DnsBloomEngine {
                 // Phase 2: Exact confirmation — O(1) amortized
                 let segment_str = unsafe { core::str::from_utf8_unchecked(segment) };
                 if self.domains.contains(segment_str) {
+                    // Blocked! But check if the matching domain is whitelisted → Spoof
+                    if !self.whitelist.is_empty() && self.whitelist.contains(segment_str) {
+                        self.queries_whitelisted += 1;
+                        return DnsAction::Spoof;
+                    }
                     self.queries_blocked += 1;
-                    return true;
+                    return DnsAction::Block;
                 }
                 // Bloom false positive
                 self.bloom_false_positives += 1;
@@ -166,7 +216,7 @@ impl DnsBloomEngine {
             }
         }
 
-        false
+        DnsAction::Allow
     }
 
     /// Number of domains loaded.
@@ -182,9 +232,16 @@ impl DnsBloomEngine {
     }
 
     /// Reset statistics.
+    /// Number of whitelisted domains loaded.
+    #[inline]
+    pub fn whitelist_count(&self) -> usize {
+        self.whitelist.len()
+    }
+
     pub fn reset_stats(&mut self) {
         self.queries_total = 0;
         self.queries_blocked = 0;
+        self.queries_whitelisted = 0;
         self.bloom_false_positives = 0;
     }
 }
@@ -277,11 +334,11 @@ mod tests {
         ];
         engine.load_domains(&domains);
 
-        assert!(engine.should_block("doubleclick.net"));
-        assert!(engine.should_block("sub.doubleclick.net"));
-        assert!(engine.should_block("DOUBLECLICK.NET")); // case insensitive
-        assert!(!engine.should_block("example.com"));
-        assert!(!engine.should_block("google.com"));
+        assert_eq!(engine.check_domain("doubleclick.net"), DnsAction::Block);
+        assert_eq!(engine.check_domain("sub.doubleclick.net"), DnsAction::Block);
+        assert_eq!(engine.check_domain("DOUBLECLICK.NET"), DnsAction::Block);
+        assert_eq!(engine.check_domain("example.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("google.com"), DnsAction::Allow);
     }
 
     #[test]
@@ -290,10 +347,28 @@ mod tests {
         let domains: Vec<String> = vec!["ads.com".into()];
         engine.load_domains(&domains);
 
-        assert!(engine.should_block("ads.com"));
-        assert!(engine.should_block("sub.ads.com"));
-        assert!(engine.should_block("deep.sub.ads.com"));
-        assert!(!engine.should_block("goodads.com")); // different domain
+        assert_eq!(engine.check_domain("ads.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("sub.ads.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("deep.sub.ads.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("goodads.com"), DnsAction::Allow);
+    }
+
+    #[test]
+    fn test_whitelist_hierarchy() {
+        let mut engine = DnsBloomEngine::new();
+        // html-load.com is in both blocklist AND whitelist
+        let domains: Vec<String> = vec!["html-load.com".into(), "ads.com".into()];
+        engine.load_domains(&domains);
+        let whitelist: Vec<String> = vec!["html-load.com".into()];
+        engine.load_whitelist(&whitelist);
+
+        // Whitelisted domain and subdomains → Allow (hierarchy walk)
+        assert_eq!(engine.check_domain("html-load.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("0.html-load.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("9.html-load.com"), DnsAction::Allow);
+        // Unrelated blocked domain → Block
+        assert_eq!(engine.check_domain("ads.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("sub.ads.com"), DnsAction::Block);
     }
 
     #[test]
@@ -311,9 +386,9 @@ mod tests {
         engine2.load_from_binary(&binary).unwrap();
 
         assert_eq!(engine2.domain_count(), 2);
-        assert!(engine2.should_block("ad.example.com"));
-        assert!(engine2.should_block("tracker.test.org"));
-        assert!(!engine2.should_block("safe.example.com"));
+        assert_eq!(engine2.check_domain("ad.example.com"), DnsAction::Block);
+        assert_eq!(engine2.check_domain("tracker.test.org"), DnsAction::Block);
+        assert_eq!(engine2.check_domain("safe.example.com"), DnsAction::Allow);
     }
 
     #[test]
@@ -329,9 +404,9 @@ mod tests {
         let domains: Vec<String> = vec!["blocked.com".into()];
         engine.load_domains(&domains);
 
-        engine.should_block("blocked.com");
-        engine.should_block("allowed.com");
-        engine.should_block("sub.blocked.com");
+        engine.check_domain("blocked.com");
+        engine.check_domain("allowed.com");
+        engine.check_domain("sub.blocked.com");
 
         assert_eq!(engine.queries_total, 3);
         assert_eq!(engine.queries_blocked, 2);

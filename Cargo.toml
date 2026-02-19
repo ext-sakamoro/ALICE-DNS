@@ -8,6 +8,7 @@ license = "AGPL-3.0"
 repository = "https://github.com/ext-sakamoro/ALICE-DNS"
 keywords = ["dns", "adblock", "bloom-filter", "raspberry-pi", "privacy"]
 categories = ["network-programming", "command-line-utilities"]
+publish = false
 
 [lib]
 name = "alice_dns"
@@ -23,6 +24,10 @@ default = []
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
+
+# TLS (HTTPS null server for ad neutralization)
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pemfile = "2"
 
 [profile.release]
 opt-level = 3

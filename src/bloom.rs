@@ -164,7 +164,7 @@ impl DnsBloomEngine {
     ///    (e.g. `0.html-load.com` blocked via parent `html-load.com` which is whitelisted)
     /// 3. If blocked normally → Block
     /// 4. Not blocked → Allow
-    #[inline]
+    #[inline(always)]
     pub fn check_domain(&mut self, domain: &str) -> DnsAction {
         self.queries_total += 1;
 
@@ -226,20 +226,20 @@ impl DnsBloomEngine {
     }
 
     /// Number of domains loaded.
-    #[inline]
+    #[inline(always)]
     pub fn domain_count(&self) -> usize {
         self.domains.len()
     }
 
     /// Bloom filter memory usage in bytes.
-    #[inline]
+    #[inline(always)]
     pub fn bloom_size_bytes(&self) -> usize {
         self.filter.len()
     }
 
     /// Reset statistics.
     /// Number of whitelisted domains loaded.
-    #[inline]
+    #[inline(always)]
     pub fn whitelist_count(&self) -> usize {
         self.whitelist.len()
     }
@@ -257,7 +257,7 @@ impl DnsBloomEngine {
 /// FNV-1a hash — fast, well-distributed for short strings (domain names).
 ///
 /// Ported from ALICE-Browser `src/simd/adblock.rs:bloom_hash`.
-#[inline]
+#[inline(always)]
 fn bloom_hash(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325; // FNV offset basis
     for &b in bytes {
@@ -273,7 +273,7 @@ fn bloom_hash(bytes: &[u8]) -> u64 {
 /// h1 = hash[0:22], h2 = hash[16:38], h3 = hash[32:54]
 ///
 /// 3 hashes × 512KB filter → optimal for 80K domains.
-#[inline]
+#[inline(always)]
 fn bloom_set(filter: &mut [u8], hash: u64) {
     let mask = (BLOOM_SIZE_BITS - 1) as u64; // 4M-1 = 0x3FFFFF
     let h1 = (hash & mask) as usize;
@@ -288,7 +288,7 @@ fn bloom_set(filter: &mut [u8], hash: u64) {
 ///
 /// Returns `true` if ALL bits are set (domain MAY be in the set).
 /// Returns `false` if ANY bit is unset (domain is DEFINITELY NOT in the set).
-#[inline]
+#[inline(always)]
 fn bloom_test(filter: &[u8], hash: u64) -> bool {
     let mask = (BLOOM_SIZE_BITS - 1) as u64;
     let h1 = (hash & mask) as usize;
@@ -306,7 +306,7 @@ fn bloom_test(filter: &[u8], hash: u64) -> bool {
 /// Instead of `if (b >= 'A' && b <= 'Z') b += 32`, we use:
 ///   `offset = ((b - 'A') < 26) as u8 * 32`
 /// No branches, no pipeline stalls.
-#[inline]
+#[inline(always)]
 fn fast_to_lower_bytes(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     for &b in bytes {

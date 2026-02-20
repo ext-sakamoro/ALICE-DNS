@@ -87,11 +87,14 @@ impl DnsStats {
     }
 
     /// Block rate (0.0 to 1.0).
+    #[inline(always)]
     pub fn block_rate(&self) -> f64 {
         if self.queries_total == 0 {
             return 0.0;
         }
-        self.queries_blocked as f64 / self.queries_total as f64
+        // Reciprocal multiplication: avoids repeated integer division on each call.
+        let inv_total = 1.0_f64 / self.queries_total as f64;
+        self.queries_blocked as f64 * inv_total
     }
 
     /// Print a summary report to stdout.

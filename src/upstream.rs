@@ -159,12 +159,15 @@ impl UpstreamForwarder {
     }
 
     /// Cache hit rate (0.0 to 1.0).
+    #[inline(always)]
     pub fn cache_hit_rate(&self) -> f64 {
         let total = self.cache_hits + self.cache_misses;
         if total == 0 {
             return 0.0;
         }
-        self.cache_hits as f64 / total as f64
+        // Reciprocal multiplication: avoids division on each reporting call.
+        let inv_total = 1.0_f64 / total as f64;
+        self.cache_hits as f64 * inv_total
     }
 
     /// Number of entries currently in cache.

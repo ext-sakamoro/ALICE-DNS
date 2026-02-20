@@ -145,6 +145,8 @@ impl DnsBloomEngine {
         self.whitelist.clear();
         for domain in domain_list {
             let d = fast_to_lower_bytes(domain.as_bytes());
+            // SAFETY: fast_to_lower_bytes only modifies ASCII uppercase bytes (A-Z → a-z),
+            // preserving valid UTF-8 encoding since ASCII bytes are single-byte code points.
             let domain_str = unsafe { String::from_utf8_unchecked(d) };
             self.whitelist.insert(domain_str);
         }
@@ -174,6 +176,8 @@ impl DnsBloomEngine {
             let mut ws = 0;
             loop {
                 let seg = &normalized[ws..];
+                // SAFETY: normalized is produced by fast_to_lower_bytes which only changes
+                // ASCII uppercase → lowercase, preserving valid UTF-8.
                 let seg_str = unsafe { core::str::from_utf8_unchecked(seg) };
                 if self.whitelist.contains(seg_str) {
                     self.queries_whitelisted += 1;
@@ -195,6 +199,8 @@ impl DnsBloomEngine {
             // Phase 1: Bloom filter — O(1), branchless
             if bloom_test(&self.filter, hash) {
                 // Phase 2: Exact confirmation — O(1) amortized
+                // SAFETY: normalized is produced by fast_to_lower_bytes which only changes
+                // ASCII uppercase → lowercase, preserving valid UTF-8.
                 let segment_str = unsafe { core::str::from_utf8_unchecked(segment) };
                 if self.domains.contains(segment_str) {
                     // Blocked! But check if the matching domain is whitelisted → Spoof

@@ -34,6 +34,12 @@ const STATS_INTERVAL: u64 = 10_000;
 const DEFAULT_WHITELIST: &str = "/etc/alice-dns/whitelist.hosts";
 /// Default HTTP null server port.
 const DEFAULT_NULL_HTTP_PORT: u16 = 80;
+/// Default HTTPS null server port.
+const DEFAULT_NULL_HTTPS_PORT: u16 = 443;
+/// Default TLS certificate path.
+const DEFAULT_TLS_CERT: &str = "/etc/alice-dns/tls.crt";
+/// Default TLS key path.
+const DEFAULT_TLS_KEY: &str = "/etc/alice-dns/tls.key";
 
 /// DNS blocking mode.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -54,6 +60,9 @@ struct Config {
     upstream_resolvers: Vec<UpstreamResolver>,
     block_mode: BlockMode,
     null_http_port: u16,
+    null_https_port: u16,
+    tls_cert_path: String,
+    tls_key_path: String,
 }
 
 fn parse_args() -> Config {
@@ -70,6 +79,9 @@ fn parse_args() -> Config {
         ],
         block_mode: BlockMode::Block,
         null_http_port: DEFAULT_NULL_HTTP_PORT,
+        null_https_port: DEFAULT_NULL_HTTPS_PORT,
+        tls_cert_path: DEFAULT_TLS_CERT.into(),
+        tls_key_path: DEFAULT_TLS_KEY.into(),
     };
 
     let mut i = 1;
@@ -146,6 +158,24 @@ fn parse_args() -> Config {
                     config.null_http_port = args[i].parse().unwrap_or(DEFAULT_NULL_HTTP_PORT);
                 }
             }
+            "--null-https-port" => {
+                i += 1;
+                if i < args.len() {
+                    config.null_https_port = args[i].parse().unwrap_or(DEFAULT_NULL_HTTPS_PORT);
+                }
+            }
+            "--tls-cert" => {
+                i += 1;
+                if i < args.len() {
+                    config.tls_cert_path = args[i].clone();
+                }
+            }
+            "--tls-key" => {
+                i += 1;
+                if i < args.len() {
+                    config.tls_key_path = args[i].clone();
+                }
+            }
             "--version" | "-V" => {
                 println!("alice-dns {}", alice_dns::VERSION);
                 std::process::exit(0);
@@ -179,6 +209,9 @@ fn print_help() {
     println!("  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)");
     println!("  -m, --mode <MODE>          block (default) or neutralize");
     println!("      --null-port <PORT>     HTTP null server port for neutralize mode (default: 80)");
+    println!("      --null-https-port <PORT>  HTTPS null server port (default: 443)");
+    println!("      --tls-cert <PATH>      TLS certificate for HTTPS null server");
+    println!("      --tls-key <PATH>       TLS private key for HTTPS null server");
     println!("  -V, --version              Print version");
     println!("  -h, --help                 Print help");
     println!();
@@ -328,15 +361,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ── Start Null HTTP Server (neutralize mode only) ──
+    // ── Start Null HTTP/HTTPS Server (neutralize mode only) ──
     if config.block_mode == BlockMode::Neutralize {
-        println!("━━━ Null HTTP Server (Ad Neutralization) ━━━");
-        let null_server = NullServer::new(config.null_http_port);
+        println!("━━━ Null Server (Ad Neutralization) ━━━");
+
+        // Try to create with TLS if cert/key exist
+        let null_server = if std::path::Path::new(&config.tls_cert_path).exists()
+            && std::path::Path::new(&config.tls_key_path).exists()
+        {
+            match NullServer::with_tls(
+                config.null_http_port,
+                config.null_https_port,
+                &config.tls_cert_path,
+                &config.tls_key_path,
+            ) {
+                Ok(server) => {
+                    println!("  TLS: cert={} key={}", config.tls_cert_path, config.tls_key_path);
+                    server
+                }
+                Err(e) => {
+                    eprintln!("  Warning: TLS setup failed: {}", e);
+                    eprintln!("  Falling back to HTTP only");
+                    NullServer::new(config.null_http_port)
+                }
+            }
+        } else {
+            println!("  TLS: disabled (no cert/key at {} / {})", config.tls_cert_path, config.tls_key_path);
+            NullServer::new(config.null_http_port)
+        };
+
         match null_server.start_background() {
             Ok(()) => {}
             Err(e) => {
-                eprintln!("  Error: Failed to start null HTTP server: {}", e);
-                eprintln!("  Port {} may be in use. Try --null-port <port>", config.null_http_port);
+                eprintln!("  Error: Failed to start null server: {}", e);
+                eprintln!("  Ports {}/{} may be in use.", config.null_http_port, config.null_https_port);
                 return Err(e.into());
             }
         }
@@ -488,7 +546,7 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
     static HANDLERS: OnceLock<std::sync::Mutex<Vec<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
     let handlers = HANDLERS.get_or_init(|| std::sync::Mutex::new(Vec::new()));
 
-    let mut guard = handlers.lock().unwrap();
+    let mut guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
     let idx = guard.len();
     guard.push(Box::new(handler));
     drop(guard);
@@ -516,7 +574,7 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
             std::thread::sleep(std::time::Duration::from_millis(100));
             if FLAGS[sig_copy as usize].swap(false, Ordering::Relaxed) {
                 let handlers = HANDLERS.get().unwrap();
-                let guard = handlers.lock().unwrap();
+                let guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
                 if idx < guard.len() {
                     (guard[idx])();
                 }

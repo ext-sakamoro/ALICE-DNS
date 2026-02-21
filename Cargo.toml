@@ -19,15 +19,24 @@ name = "alice-dns"
 path = "src/main.rs"
 
 [features]
+# Feature flags — none enabled by default to keep the binary minimal.
+#
+# tls:       Enable DNS-over-TLS / HTTPS null server (requires rustls).
+#            Activate with: cargo build --features tls
+#
+# analytics: Enable ALICE-Analytics integration (HLL, CMS, DDSketch).
+#            Activate with: cargo build --features analytics
 default = []
+tls = ["dep:rustls", "dep:rustls-pemfile"]
+analytics = []
 
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
 
-# TLS (HTTPS null server for ad neutralization)
-rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
-rustls-pemfile = "2"
+# TLS (HTTPS null server for ad neutralization) — only when `tls` feature is enabled.
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
 
 [profile.release]
 opt-level = 3

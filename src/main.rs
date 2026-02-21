@@ -365,29 +365,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if config.block_mode == BlockMode::Neutralize {
         println!("━━━ Null Server (Ad Neutralization) ━━━");
 
-        // Try to create with TLS if cert/key exist
-        let null_server = if std::path::Path::new(&config.tls_cert_path).exists()
-            && std::path::Path::new(&config.tls_key_path).exists()
-        {
-            match NullServer::with_tls(
-                config.null_http_port,
-                config.null_https_port,
-                &config.tls_cert_path,
-                &config.tls_key_path,
-            ) {
-                Ok(server) => {
-                    println!("  TLS: cert={} key={}", config.tls_cert_path, config.tls_key_path);
-                    server
-                }
-                Err(e) => {
-                    eprintln!("  Warning: TLS setup failed: {}", e);
-                    eprintln!("  Falling back to HTTP only");
+        // Build the NullServer.  When compiled with the `tls` feature, attempt
+        // to configure HTTPS if a cert/key pair is present on disk.
+        // Without the `tls` feature, always use HTTP-only mode.
+        let null_server = {
+            #[cfg(feature = "tls")]
+            {
+                // Try to create with TLS if cert/key exist.
+                if std::path::Path::new(&config.tls_cert_path).exists()
+                    && std::path::Path::new(&config.tls_key_path).exists()
+                {
+                    match NullServer::with_tls(
+                        config.null_http_port,
+                        config.null_https_port,
+                        &config.tls_cert_path,
+                        &config.tls_key_path,
+                    ) {
+                        Ok(server) => {
+                            println!("  TLS: cert={} key={}", config.tls_cert_path, config.tls_key_path);
+                            server
+                        }
+                        Err(e) => {
+                            eprintln!("  Warning: TLS setup failed: {}", e);
+                            eprintln!("  Falling back to HTTP only");
+                            NullServer::new(config.null_http_port)
+                        }
+                    }
+                } else {
+                    println!("  TLS: disabled (no cert/key at {} / {})", config.tls_cert_path, config.tls_key_path);
                     NullServer::new(config.null_http_port)
                 }
             }
-        } else {
-            println!("  TLS: disabled (no cert/key at {} / {})", config.tls_cert_path, config.tls_key_path);
-            NullServer::new(config.null_http_port)
+
+            #[cfg(not(feature = "tls"))]
+            {
+                // TLS feature not compiled in — HTTP null server only.
+                // To enable HTTPS null responses, rebuild with: cargo build --features tls
+                println!("  TLS: not compiled in (rebuild with --features tls to enable HTTPS)");
+                NullServer::new(config.null_http_port)
+            }
         };
 
         match null_server.start_background() {

@@ -41,6 +41,12 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(feature = "tls")]
+use std::sync::Arc;
+
+#[cfg(feature = "tls")]
+use rustls::ServerConfig;
+
 // ─── Static Response Bodies ─────────────────────────────────────────
 
 /// 1x1 transparent GIF89a (43 bytes).
@@ -132,30 +138,139 @@ enum ContentKind {
 ///
 /// Runs on a background thread, accepts TCP connections on the specified port,
 /// and returns neutralized content based on the request type.
+///
+/// Optionally supports TLS (HTTPS) on a second port when compiled with the
+/// `tls` feature. Without TLS the server handles HTTP only on `port`.
 pub struct NullServer {
+    /// HTTP listen port.
     port: u16,
+    /// Optional TLS configuration: (https_port, ServerConfig).
+    ///
+    /// Present only when `tls` feature is enabled and `with_tls()` was used.
+    #[cfg(feature = "tls")]
+    tls: Option<(u16, Arc<ServerConfig>)>,
 }
 
 impl NullServer {
-    /// Create a new null server bound to the given port.
+    /// Create a new null server bound to the given port (HTTP only).
     pub fn new(port: u16) -> Self {
-        Self { port }
+        Self {
+            port,
+            #[cfg(feature = "tls")]
+            tls: None,
+        }
     }
 
-    /// Start the null server on a background thread.
+    /// Create a null server with both HTTP and HTTPS support.
+    ///
+    /// Reads a PEM-encoded certificate chain and private key from disk and
+    /// configures a `rustls::ServerConfig`. Returns an error if the files are
+    /// missing, malformed, or the TLS handshake configuration fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `http_port`  - Port for plaintext HTTP (typically 80).
+    /// * `https_port` - Port for TLS HTTPS (typically 443).
+    /// * `cert_path`  - Path to PEM certificate chain (server + intermediates).
+    /// * `key_path`   - Path to PEM private key (RSA or ECDSA).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the cert/key cannot be read or parsed, or if `rustls`
+    /// rejects the key material.
+    #[cfg(feature = "tls")]
+    pub fn with_tls(
+        http_port: u16,
+        https_port: u16,
+        cert_path: &str,
+        key_path: &str,
+    ) -> std::io::Result<Self> {
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use rustls_pemfile::{certs, private_key};
+
+        // ── Load certificate chain ──
+        let cert_file = std::fs::File::open(cert_path).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("Failed to open TLS certificate '{}': {}", cert_path, e),
+            )
+        })?;
+        let mut cert_reader = std::io::BufReader::new(cert_file);
+        let cert_chain: Vec<CertificateDer<'static>> = certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to parse PEM certificates from '{}': {}", cert_path, e),
+                )
+            })?;
+
+        if cert_chain.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("No certificates found in '{}'", cert_path),
+            ));
+        }
+
+        // ── Load private key ──
+        let key_file = std::fs::File::open(key_path).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("Failed to open TLS private key '{}': {}", key_path, e),
+            )
+        })?;
+        let mut key_reader = std::io::BufReader::new(key_file);
+        let private_key: PrivateKeyDer<'static> =
+            private_key(&mut key_reader)
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to parse PEM private key from '{}': {}", key_path, e),
+                    )
+                })?
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("No private key found in '{}'", key_path),
+                    )
+                })?;
+
+        // ── Build rustls ServerConfig ──
+        let tls_config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, private_key)
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to build TLS server config: {}", e),
+                )
+            })?;
+
+        Ok(Self {
+            port: http_port,
+            tls: Some((https_port, Arc::new(tls_config))),
+        })
+    }
+
+    /// Start the null server on background thread(s).
+    ///
+    /// Always starts an HTTP listener on `self.port`.
+    /// When `tls` feature is enabled and TLS was configured via `with_tls()`,
+    /// also starts a TLS listener on the HTTPS port.
     ///
     /// Binds to `0.0.0.0:{port}` and spawns a listener thread.
     /// Each connection is handled in its own thread with a 500ms timeout.
     ///
     /// Returns immediately after binding (non-blocking).
     pub fn start_background(self) -> std::io::Result<()> {
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port))?;
+        // ── HTTP listener ──
+        let http_listener = TcpListener::bind(format!("0.0.0.0:{}", self.port))?;
         println!("  Listening on 0.0.0.0:{} (HTTP null responses)", self.port);
 
         thread::Builder::new()
             .name("null-http".into())
             .spawn(move || {
-                for stream in listener.incoming() {
+                for stream in http_listener.incoming() {
                     if let Ok(stream) = stream {
                         thread::spawn(move || {
                             Self::handle_connection(stream);
@@ -164,7 +279,77 @@ impl NullServer {
                 }
             })?;
 
+        // ── HTTPS listener (TLS feature only) ──
+        #[cfg(feature = "tls")]
+        if let Some((https_port, tls_config)) = self.tls {
+            let https_listener = TcpListener::bind(format!("0.0.0.0:{}", https_port))
+                .map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to bind HTTPS port {}: {}", https_port, e),
+                    )
+                })?;
+            println!("  Listening on 0.0.0.0:{} (HTTPS null responses)", https_port);
+
+            thread::Builder::new()
+                .name("null-https".into())
+                .spawn(move || {
+                    for stream in https_listener.incoming() {
+                        if let Ok(tcp_stream) = stream {
+                            let cfg = Arc::clone(&tls_config);
+                            thread::spawn(move || {
+                                Self::handle_tls_connection(tcp_stream, cfg);
+                            });
+                        }
+                    }
+                })?;
+        }
+
         Ok(())
+    }
+
+    /// Handle a single TLS (HTTPS) connection.
+    ///
+    /// Performs the TLS handshake, reads the HTTP request, sends a null
+    /// response, and closes the connection.
+    ///
+    /// Uses `rustls::Stream` which requires `&mut TcpStream` for both read and
+    /// write via the same mutable reference.
+    ///
+    /// TODO: For production use, consider wrapping in a proper bidirectional
+    /// adapter (e.g. `tokio-rustls` or a split `try_clone` approach) to
+    /// support concurrent read/write on the TLS stream.
+    /// See: https://docs.rs/rustls/latest/rustls/struct.Stream.html
+    #[cfg(feature = "tls")]
+    fn handle_tls_connection(mut tcp_stream: TcpStream, tls_config: Arc<ServerConfig>) {
+        use rustls::ServerConnection;
+
+        let _ = tcp_stream.set_read_timeout(Some(CONN_TIMEOUT));
+        let _ = tcp_stream.set_write_timeout(Some(CONN_TIMEOUT));
+
+        // Build a TLS server connection from the accepted TCP stream.
+        let mut conn = match ServerConnection::new(tls_config) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // rustls::Stream<ServerConnection, TcpStream> provides Read + Write by
+        // interleaving TLS record reads/writes on the underlying socket.
+        let mut stream = rustls::Stream::new(&mut conn, &mut tcp_stream);
+
+        // Read the HTTP request (2 KB is sufficient for headers).
+        let mut buf = [0u8; 2048];
+        let n = match stream.read(&mut buf) {
+            Ok(n) if n > 0 => n,
+            _ => return,
+        };
+
+        let request = &buf[..n];
+        let kind = Self::detect_content_kind(request);
+        let response = Self::build_response(&kind);
+
+        let _ = stream.write_all(&response);
+        let _ = stream.flush();
     }
 
     /// Handle a single HTTP connection.

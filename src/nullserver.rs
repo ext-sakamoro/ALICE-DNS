@@ -65,8 +65,7 @@ const TRANSPARENT_GIF: &[u8] = &[
     // Image Descriptor: (0,0) 1x1, no local color table
     0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
     // Image Data: LZW min code size=2, 2-byte sub-block
-    0x02, 0x02, 0x44, 0x01, 0x00,
-    // GIF Trailer
+    0x02, 0x02, 0x44, 0x01, 0x00, // GIF Trailer
     0x3B,
 ];
 
@@ -201,7 +200,10 @@ impl NullServer {
             .map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse PEM certificates from '{}': {}", cert_path, e),
+                    format!(
+                        "Failed to parse PEM certificates from '{}': {}",
+                        cert_path, e
+                    ),
                 )
             })?;
 
@@ -220,20 +222,19 @@ impl NullServer {
             )
         })?;
         let mut key_reader = std::io::BufReader::new(key_file);
-        let private_key: PrivateKeyDer<'static> =
-            private_key(&mut key_reader)
-                .map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to parse PEM private key from '{}': {}", key_path, e),
-                    )
-                })?
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("No private key found in '{}'", key_path),
-                    )
-                })?;
+        let private_key: PrivateKeyDer<'static> = private_key(&mut key_reader)
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to parse PEM private key from '{}': {}", key_path, e),
+                )
+            })?
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("No private key found in '{}'", key_path),
+                )
+            })?;
 
         // ── Build rustls ServerConfig ──
         let tls_config = ServerConfig::builder()
@@ -270,26 +271,27 @@ impl NullServer {
         thread::Builder::new()
             .name("null-http".into())
             .spawn(move || {
-                for stream in http_listener.incoming() {
-                    if let Ok(stream) = stream {
-                        thread::spawn(move || {
-                            Self::handle_connection(stream);
-                        });
-                    }
+                for stream in http_listener.incoming().flatten() {
+                    thread::spawn(move || {
+                        Self::handle_connection(stream);
+                    });
                 }
             })?;
 
         // ── HTTPS listener (TLS feature only) ──
         #[cfg(feature = "tls")]
         if let Some((https_port, tls_config)) = self.tls {
-            let https_listener = TcpListener::bind(format!("0.0.0.0:{}", https_port))
-                .map_err(|e| {
+            let https_listener =
+                TcpListener::bind(format!("0.0.0.0:{}", https_port)).map_err(|e| {
                     std::io::Error::new(
                         e.kind(),
                         format!("Failed to bind HTTPS port {}: {}", https_port, e),
                     )
                 })?;
-            println!("  Listening on 0.0.0.0:{} (HTTPS null responses)", https_port);
+            println!(
+                "  Listening on 0.0.0.0:{} (HTTPS null responses)",
+                https_port
+            );
 
             thread::Builder::new()
                 .name("null-https".into())
@@ -389,10 +391,11 @@ impl NullServer {
         }
 
         // Extract URL path: "GET /path?query HTTP/1.1"
-        let path = req.split_whitespace()
+        let path = req
+            .split_whitespace()
             .nth(1)
             .unwrap_or("/")
-            .split('?')       // strip query string
+            .split('?') // strip query string
             .next()
             .unwrap_or("/")
             .to_ascii_lowercase();
@@ -405,10 +408,14 @@ impl NullServer {
         if path.ends_with(".css") {
             return ContentKind::Css;
         }
-        if path.ends_with(".gif") || path.ends_with(".png")
-            || path.ends_with(".jpg") || path.ends_with(".jpeg")
-            || path.ends_with(".webp") || path.ends_with(".svg")
-            || path.ends_with(".ico") || path.ends_with(".avif")
+        if path.ends_with(".gif")
+            || path.ends_with(".png")
+            || path.ends_with(".jpg")
+            || path.ends_with(".jpeg")
+            || path.ends_with(".webp")
+            || path.ends_with(".svg")
+            || path.ends_with(".ico")
+            || path.ends_with(".avif")
         {
             return ContentKind::Image;
         }
@@ -455,14 +462,13 @@ impl NullServer {
     /// All responses include CORS headers and `Connection: close`.
     fn build_response(kind: &ContentKind) -> Vec<u8> {
         match kind {
-            ContentKind::Preflight => {
-                format!(
-                    "HTTP/1.1 204 No Content\r\n\
+            ContentKind::Preflight => format!(
+                "HTTP/1.1 204 No Content\r\n\
                      {CORS_HEADERS}\
                      Content-Length: 0\r\n\
                      Connection: close\r\n\r\n"
-                ).into_bytes()
-            }
+            )
+            .into_bytes(),
             ContentKind::JavaScript => {
                 let mut resp = format!(
                     "HTTP/1.1 200 OK\r\n\
@@ -471,19 +477,19 @@ impl NullServer {
                      Content-Length: {}\r\n\
                      Connection: close\r\n\r\n",
                     EMPTY_JS.len()
-                ).into_bytes();
+                )
+                .into_bytes();
                 resp.extend_from_slice(EMPTY_JS);
                 resp
             }
-            ContentKind::Css => {
-                format!(
-                    "HTTP/1.1 200 OK\r\n\
+            ContentKind::Css => format!(
+                "HTTP/1.1 200 OK\r\n\
                      {CORS_HEADERS}\
                      Content-Type: text/css; charset=utf-8\r\n\
                      Content-Length: 0\r\n\
                      Connection: close\r\n\r\n"
-                ).into_bytes()
-            }
+            )
+            .into_bytes(),
             ContentKind::Image => {
                 let mut resp = format!(
                     "HTTP/1.1 200 OK\r\n\
@@ -492,7 +498,8 @@ impl NullServer {
                      Content-Length: {}\r\n\
                      Connection: close\r\n\r\n",
                     TRANSPARENT_GIF.len()
-                ).into_bytes();
+                )
+                .into_bytes();
                 resp.extend_from_slice(TRANSPARENT_GIF);
                 resp
             }
@@ -504,7 +511,8 @@ impl NullServer {
                      Content-Length: {}\r\n\
                      Connection: close\r\n\r\n",
                     NEUTRALIZE_HTML.len()
-                ).into_bytes();
+                )
+                .into_bytes();
                 resp.extend_from_slice(NEUTRALIZE_HTML);
                 resp
             }
@@ -516,7 +524,8 @@ impl NullServer {
                      Content-Length: {}\r\n\
                      Connection: close\r\n\r\n",
                     EMPTY_JSON.len()
-                ).into_bytes();
+                )
+                .into_bytes();
                 resp.extend_from_slice(EMPTY_JSON);
                 resp
             }
@@ -528,17 +537,17 @@ impl NullServer {
                      Content-Length: {}\r\n\
                      Connection: close\r\n\r\n",
                     EMPTY_XML.len()
-                ).into_bytes();
+                )
+                .into_bytes();
                 resp.extend_from_slice(EMPTY_XML);
                 resp
             }
-            ContentKind::Other => {
-                format!(
-                    "HTTP/1.1 204 No Content\r\n\
+            ContentKind::Other => format!(
+                "HTTP/1.1 204 No Content\r\n\
                      {CORS_HEADERS}\
                      Connection: close\r\n\r\n"
-                ).into_bytes()
-            }
+            )
+            .into_bytes(),
         }
     }
 }
@@ -554,7 +563,8 @@ mod tests {
             "{method} {path} HTTP/1.1\r\n\
              Host: ads.example.com\r\n\
              Accept: {accept}\r\n\r\n"
-        ).into_bytes()
+        )
+        .into_bytes()
     }
 
     // ── Content detection tests ──
@@ -562,53 +572,79 @@ mod tests {
     #[test]
     fn test_detect_js_by_extension() {
         let req = make_request("GET", "/ads/tracker.js", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::JavaScript));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::JavaScript
+        ));
     }
 
     #[test]
     fn test_detect_mjs_by_extension() {
         let req = make_request("GET", "/module.mjs", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::JavaScript));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::JavaScript
+        ));
     }
 
     #[test]
     fn test_detect_image_by_extension() {
-        for ext in &[".gif", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".avif"] {
+        for ext in &[
+            ".gif", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".avif",
+        ] {
             let path = format!("/pixel{}", ext);
             let req = make_request("GET", &path, "*/*");
-            assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Image),
-                "Failed for extension: {}", ext);
+            assert!(
+                matches!(NullServer::detect_content_kind(&req), ContentKind::Image),
+                "Failed for extension: {}",
+                ext
+            );
         }
     }
 
     #[test]
     fn test_detect_html_by_extension() {
         let req = make_request("GET", "/ad-frame.html", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Html));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Html
+        ));
     }
 
     #[test]
     fn test_detect_css_by_extension() {
         let req = make_request("GET", "/style.css", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Css));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Css
+        ));
     }
 
     #[test]
     fn test_detect_json_by_extension() {
         let req = make_request("GET", "/config.json", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Json));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Json
+        ));
     }
 
     #[test]
     fn test_detect_xml_by_extension() {
         let req = make_request("GET", "/feed.xml", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Xml));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Xml
+        ));
     }
 
     #[test]
     fn test_detect_with_query_string() {
         let req = make_request("GET", "/ads/tracker.js?v=123&t=abc", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::JavaScript));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::JavaScript
+        ));
     }
 
     // ── Accept header fallback tests ──
@@ -616,25 +652,37 @@ mod tests {
     #[test]
     fn test_detect_html_by_accept() {
         let req = make_request("GET", "/some/path", "text/html, application/xhtml+xml");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Html));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Html
+        ));
     }
 
     #[test]
     fn test_detect_image_by_accept() {
         let req = make_request("GET", "/some/path", "image/webp, image/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Image));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Image
+        ));
     }
 
     #[test]
     fn test_detect_js_by_accept() {
         let req = make_request("GET", "/some/path", "application/javascript");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::JavaScript));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::JavaScript
+        ));
     }
 
     #[test]
     fn test_detect_css_by_accept() {
         let req = make_request("GET", "/some/path", "text/css");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Css));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Css
+        ));
     }
 
     // ── Method tests ──
@@ -642,19 +690,28 @@ mod tests {
     #[test]
     fn test_options_preflight() {
         let req = make_request("OPTIONS", "/path", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Preflight));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Preflight
+        ));
     }
 
     #[test]
     fn test_unknown_content() {
         let req = make_request("GET", "/unknown", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Other));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Other
+        ));
     }
 
     #[test]
     fn test_post_with_extension() {
         let req = make_request("POST", "/beacon.gif", "*/*");
-        assert!(matches!(NullServer::detect_content_kind(&req), ContentKind::Image));
+        assert!(matches!(
+            NullServer::detect_content_kind(&req),
+            ContentKind::Image
+        ));
     }
 
     // ── Response body tests ──
@@ -749,8 +806,11 @@ mod tests {
         for kind in &kinds {
             let resp = NullServer::build_response(kind);
             let resp_str = String::from_utf8_lossy(&resp);
-            assert!(resp_str.contains("Connection: close"),
-                "Missing Connection: close for {:?}", std::mem::discriminant(kind));
+            assert!(
+                resp_str.contains("Connection: close"),
+                "Missing Connection: close for {:?}",
+                std::mem::discriminant(kind)
+            );
         }
     }
 }

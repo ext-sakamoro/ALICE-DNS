@@ -103,11 +103,10 @@ mod tests {
 0.0.0.0 doubleclick.net
 ";
         let domains = parse_hosts(content);
-        assert_eq!(domains, vec![
-            "ads.example.com",
-            "doubleclick.net",
-            "tracker.example.com",
-        ]);
+        assert_eq!(
+            domains,
+            vec!["ads.example.com", "doubleclick.net", "tracker.example.com",]
+        );
     }
 
     #[test]

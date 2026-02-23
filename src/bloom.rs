@@ -53,6 +53,12 @@ pub struct DnsBloomEngine {
     pub bloom_false_positives: u64,
 }
 
+impl Default for DnsBloomEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DnsBloomEngine {
     /// Create an empty engine.
     pub fn new() -> Self {
@@ -127,11 +133,15 @@ impl DnsBloomEngine {
     /// Serialize to binary format for hot-reload.
     pub fn to_binary(&self) -> Vec<u8> {
         let domain_count = self.domains.len() as u32;
-        let domain_text: String = self.domains.iter().map(|d| {
-            let mut s = d.clone();
-            s.push('\n');
-            s
-        }).collect();
+        let domain_text: String = self
+            .domains
+            .iter()
+            .map(|d| {
+                let mut s = d.clone();
+                s.push('\n');
+                s
+            })
+            .collect();
 
         let mut out = Vec::with_capacity(4 + BLOOM_SIZE_BYTES + domain_text.len());
         out.extend_from_slice(&domain_count.to_le_bytes());
@@ -380,10 +390,7 @@ mod tests {
     #[test]
     fn test_binary_roundtrip() {
         let mut engine = DnsBloomEngine::new();
-        let domains: Vec<String> = vec![
-            "ad.example.com".into(),
-            "tracker.test.org".into(),
-        ];
+        let domains: Vec<String> = vec!["ad.example.com".into(), "tracker.test.org".into()];
         engine.load_domains(&domains);
 
         let binary = engine.to_binary();

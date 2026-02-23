@@ -12,7 +12,7 @@
 use alloc::string::String;
 
 #[cfg(feature = "analytics")]
-use alice_analytics::{HyperLogLog, CountMinSketch, DDSketch};
+use alice_analytics::{CountMinSketch, DDSketch, HyperLogLog};
 
 /// DNS server statistics.
 pub struct DnsStats {
@@ -39,6 +39,12 @@ pub struct DnsStats {
     top_blocked: CountMinSketch,
     #[cfg(feature = "analytics")]
     latency_sketch: DDSketch,
+}
+
+impl Default for DnsStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DnsStats {
@@ -105,7 +111,10 @@ impl DnsStats {
         println!("│ Queries total:      {:>18} │", self.queries_total);
         println!("│ Queries blocked:    {:>18} │", self.queries_blocked);
         println!("│ Queries forwarded:  {:>18} │", self.queries_forwarded);
-        println!("│ Block rate:         {:>17.1}% │", self.block_rate() * 100.0);
+        println!(
+            "│ Block rate:         {:>17.1}% │",
+            self.block_rate() * 100.0
+        );
         println!("│ Cache hits:         {:>18} │", self.cache_hits);
         println!("│ Cache misses:       {:>18} │", self.cache_misses);
         println!("│ Upstream errors:    {:>18} │", self.upstream_errors);
@@ -114,10 +123,22 @@ impl DnsStats {
         #[cfg(feature = "analytics")]
         {
             println!("├─────────────────────────────────────────┤");
-            println!("│ Unique domains:     {:>18} │", self.unique_domains.count() as u64);
-            println!("│ Latency P50:        {:>15.0} μs │", self.latency_sketch.quantile(0.50).unwrap_or(0.0));
-            println!("│ Latency P95:        {:>15.0} μs │", self.latency_sketch.quantile(0.95).unwrap_or(0.0));
-            println!("│ Latency P99:        {:>15.0} μs │", self.latency_sketch.quantile(0.99).unwrap_or(0.0));
+            println!(
+                "│ Unique domains:     {:>18} │",
+                self.unique_domains.count() as u64
+            );
+            println!(
+                "│ Latency P50:        {:>15.0} μs │",
+                self.latency_sketch.quantile(0.50).unwrap_or(0.0)
+            );
+            println!(
+                "│ Latency P95:        {:>15.0} μs │",
+                self.latency_sketch.quantile(0.95).unwrap_or(0.0)
+            );
+            println!(
+                "│ Latency P99:        {:>15.0} μs │",
+                self.latency_sketch.quantile(0.99).unwrap_or(0.0)
+            );
         }
 
         println!("└─────────────────────────────────────────┘");

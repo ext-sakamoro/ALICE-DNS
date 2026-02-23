@@ -127,11 +127,14 @@ impl UpstreamForwarder {
                     let capped_ttl = ttl.min(MAX_CACHE_TTL_SECS);
 
                     // Cache the response
-                    self.cache.put(cache_key, CachedResponse {
-                        data: response.clone(),
-                        cached_at: Instant::now(),
-                        ttl_secs: capped_ttl,
-                    });
+                    self.cache.put(
+                        cache_key,
+                        CachedResponse {
+                            data: response.clone(),
+                            cached_at: Instant::now(),
+                            ttl_secs: capped_ttl,
+                        },
+                    );
 
                     return Some(response);
                 }

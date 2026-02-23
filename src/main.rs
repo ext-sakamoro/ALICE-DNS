@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use alice_dns::{
-    DnsBloomEngine, DnsAction, DnsStats, UpstreamForwarder, NullServer,
-    blocklist, dns, upstream::UpstreamResolver,
+    blocklist, dns, upstream::UpstreamResolver, DnsAction, DnsBloomEngine, DnsStats, NullServer,
+    UpstreamForwarder,
 };
 
 /// Default blocklist path.
@@ -74,8 +74,14 @@ fn parse_args() -> Config {
         whitelist_path: PathBuf::from(DEFAULT_WHITELIST),
         spoof_ip: [192, 168, 11, 7], // Default: Raspberry Pi's LAN IP
         upstream_resolvers: vec![
-            UpstreamResolver { addr: "1.1.1.1:53".into(), name: "Cloudflare".into() },
-            UpstreamResolver { addr: "8.8.8.8:53".into(), name: "Google".into() },
+            UpstreamResolver {
+                addr: "1.1.1.1:53".into(),
+                name: "Cloudflare".into(),
+            },
+            UpstreamResolver {
+                addr: "8.8.8.8:53".into(),
+                name: "Google".into(),
+            },
         ],
         block_mode: BlockMode::Block,
         null_http_port: DEFAULT_NULL_HTTP_PORT,
@@ -131,8 +137,10 @@ fn parse_args() -> Config {
                     let parts: Vec<&str> = args[i].split('.').collect();
                     if parts.len() == 4 {
                         if let (Ok(a), Ok(b), Ok(c), Ok(d)) = (
-                            parts[0].parse::<u8>(), parts[1].parse::<u8>(),
-                            parts[2].parse::<u8>(), parts[3].parse::<u8>(),
+                            parts[0].parse::<u8>(),
+                            parts[1].parse::<u8>(),
+                            parts[2].parse::<u8>(),
+                            parts[3].parse::<u8>(),
                         ) {
                             config.spoof_ip = [a, b, c, d];
                         }
@@ -206,9 +214,13 @@ fn print_help() {
     println!("  -b, --blocklist <PATH>     Blocklist file path (hosts format)");
     println!("  -w, --whitelist <PATH>     Whitelist file path (one domain per line)");
     println!("  -u, --upstream <ADDR,...>   Upstream DNS (default: 1.1.1.1,8.8.8.8)");
-    println!("  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)");
+    println!(
+        "  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)"
+    );
     println!("  -m, --mode <MODE>          block (default) or neutralize");
-    println!("      --null-port <PORT>     HTTP null server port for neutralize mode (default: 80)");
+    println!(
+        "      --null-port <PORT>     HTTP null server port for neutralize mode (default: 80)"
+    );
     println!("      --null-https-port <PORT>  HTTPS null server port (default: 443)");
     println!("      --tls-cert <PATH>      TLS certificate for HTTPS null server");
     println!("      --tls-key <PATH>       TLS private key for HTTPS null server");
@@ -216,8 +228,12 @@ fn print_help() {
     println!("  -h, --help                 Print help");
     println!();
     println!("Modes:");
-    println!("  block       Return 0.0.0.0 for blocked domains (traditional, may break anti-adblock)");
-    println!("  neutralize  Return Pi's IP + HTTP null server (anti-adblock bypass, click prevention)");
+    println!(
+        "  block       Return 0.0.0.0 for blocked domains (traditional, may break anti-adblock)"
+    );
+    println!(
+        "  neutralize  Return Pi's IP + HTTP null server (anti-adblock bypass, click prevention)"
+    );
     println!();
     println!("Signals:");
     println!("  SIGHUP   Reload blocklist (hot-reload, zero downtime)");
@@ -235,9 +251,11 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
         match std::fs::read(&config.filter_bin_path) {
             Ok(data) => {
                 if engine.load_from_binary(&data).is_ok() {
-                    println!("  Loaded binary filter: {} domains ({} KB)",
+                    println!(
+                        "  Loaded binary filter: {} domains ({} KB)",
                         engine.domain_count(),
-                        engine.bloom_size_bytes() / 1024);
+                        engine.bloom_size_bytes() / 1024
+                    );
                     return;
                 }
             }
@@ -259,7 +277,10 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
                     eprintln!("  Warning: Could not save binary filter: {}", e);
                 }
 
-                println!("  Loaded blocklist: {} domains from {:?}", count, config.blocklist_path);
+                println!(
+                    "  Loaded blocklist: {} domains from {:?}",
+                    count, config.blocklist_path
+                );
                 println!("  Bloom filter: {} KB", engine.bloom_size_bytes() / 1024);
             }
             Err(e) => {
@@ -268,7 +289,10 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
             }
         }
     } else {
-        eprintln!("  Warning: No blocklist found at {:?}", config.blocklist_path);
+        eprintln!(
+            "  Warning: No blocklist found at {:?}",
+            config.blocklist_path
+        );
         eprintln!("  Running with empty blocklist (forwarding only)");
         eprintln!("  Run: update-blocklist.py to download StevenBlack/hosts");
     }
@@ -286,7 +310,10 @@ fn load_whitelist(engine: &mut DnsBloomEngine, config: &Config) {
                     .collect();
                 let count = domains.len();
                 engine.load_whitelist(&domains);
-                println!("  Whitelist: {} domains from {:?}", count, config.whitelist_path);
+                println!(
+                    "  Whitelist: {} domains from {:?}",
+                    count, config.whitelist_path
+                );
             }
             Err(e) => eprintln!("  Warning: Failed to read whitelist: {}", e),
         }
@@ -299,7 +326,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args();
 
     println!("╔═════════════════════════════════════════════╗");
-    println!("║           ALICE-DNS v{}                  ║", alice_dns::VERSION);
+    println!(
+        "║           ALICE-DNS v{}                  ║",
+        alice_dns::VERSION
+    );
     println!("║  Bloom Filter DNS Ad-Blocker                ║");
     println!("╚═════════════════════════════════════════════╝");
     println!();
@@ -382,7 +412,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &config.tls_key_path,
                     ) {
                         Ok(server) => {
-                            println!("  TLS: cert={} key={}", config.tls_cert_path, config.tls_key_path);
+                            println!(
+                                "  TLS: cert={} key={}",
+                                config.tls_cert_path, config.tls_key_path
+                            );
                             server
                         }
                         Err(e) => {
@@ -392,7 +425,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 } else {
-                    println!("  TLS: disabled (no cert/key at {} / {})", config.tls_cert_path, config.tls_key_path);
+                    println!(
+                        "  TLS: disabled (no cert/key at {} / {})",
+                        config.tls_cert_path, config.tls_key_path
+                    );
                     NullServer::new(config.null_http_port)
                 }
             }
@@ -410,7 +446,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(()) => {}
             Err(e) => {
                 eprintln!("  Error: Failed to start null server: {}", e);
-                eprintln!("  Ports {}/{} may be in use.", config.null_http_port, config.null_https_port);
+                eprintln!(
+                    "  Ports {}/{} may be in use.",
+                    config.null_http_port, config.null_https_port
+                );
                 return Err(e.into());
             }
         }
@@ -421,9 +460,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         BlockMode::Block => "block (0.0.0.0)",
         BlockMode::Neutralize => "neutralize (spoof IP + HTTP null)",
     };
-    println!("ALICE-DNS is ready. {} blocked, {} whitelisted, mode: {}, spoof IP: {}.{}.{}.{}",
-        bloom_engine.domain_count(), bloom_engine.whitelist_count(), mode_str,
-        config.spoof_ip[0], config.spoof_ip[1], config.spoof_ip[2], config.spoof_ip[3]);
+    println!(
+        "ALICE-DNS is ready. {} blocked, {} whitelisted, mode: {}, spoof IP: {}.{}.{}.{}",
+        bloom_engine.domain_count(),
+        bloom_engine.whitelist_count(),
+        mode_str,
+        config.spoof_ip[0],
+        config.spoof_ip[1],
+        config.spoof_ip[2],
+        config.spoof_ip[3]
+    );
     println!("Send SIGHUP to reload, SIGUSR1 for stats, SIGTERM to stop.");
     println!();
 
@@ -443,8 +489,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\nReloading blocklist + whitelist...");
             load_blocklist(&mut bloom_engine, &config);
             load_whitelist(&mut bloom_engine, &config);
-            println!("Reload complete. {} blocked, {} whitelisted.",
-                bloom_engine.domain_count(), bloom_engine.whitelist_count());
+            println!(
+                "Reload complete. {} blocked, {} whitelisted.",
+                bloom_engine.domain_count(),
+                bloom_engine.whitelist_count()
+            );
         }
 
         if stats_flag.load(Ordering::Relaxed) {
@@ -475,62 +524,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Block DDR (Discovery of Designated Resolvers, RFC 9462)
         // Prevents iOS/macOS from discovering upstream DoH/DoT and bypassing local DNS
-        let response = if query.qname.ends_with("_dns.resolver.arpa") || query.qname == "_dns.resolver.arpa" {
-            let latency = query_start.elapsed().as_micros() as u64;
-            stats.record_query(&query.qname, true, latency);
-            dns::build_nxdomain_response(packet, &query)
-        } else {
-            match bloom_engine.check_domain(&query.qname) {
-                DnsAction::Block => {
-                    let latency = query_start.elapsed().as_micros() as u64;
-                    stats.record_query(&query.qname, true, latency);
-                    if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
-                        if config.block_mode == BlockMode::Neutralize {
-                            // NEUTRALIZE → spoof to Pi's IP (HTTP null server handles requests)
+        let response =
+            if query.qname.ends_with("_dns.resolver.arpa") || query.qname == "_dns.resolver.arpa" {
+                let latency = query_start.elapsed().as_micros() as u64;
+                stats.record_query(&query.qname, true, latency);
+                dns::build_nxdomain_response(packet, &query)
+            } else {
+                match bloom_engine.check_domain(&query.qname) {
+                    DnsAction::Block => {
+                        let latency = query_start.elapsed().as_micros() as u64;
+                        stats.record_query(&query.qname, true, latency);
+                        if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
+                            if config.block_mode == BlockMode::Neutralize {
+                                // NEUTRALIZE → spoof to Pi's IP (HTTP null server handles requests)
+                                dns::build_spoof_response(packet, &query, config.spoof_ip)
+                            } else {
+                                // BLOCK → 0.0.0.0 / :: (traditional)
+                                dns::build_blocked_response(packet, &query)
+                            }
+                        } else {
+                            dns::build_nxdomain_response(packet, &query)
+                        }
+                    }
+                    DnsAction::Spoof => {
+                        // SPOOFED → return Pi's IP (anti-adblock bypass)
+                        let latency = query_start.elapsed().as_micros() as u64;
+                        stats.record_query(&query.qname, true, latency);
+                        if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
                             dns::build_spoof_response(packet, &query, config.spoof_ip)
                         } else {
-                            // BLOCK → 0.0.0.0 / :: (traditional)
-                            dns::build_blocked_response(packet, &query)
+                            dns::build_nxdomain_response(packet, &query)
                         }
-                    } else {
-                        dns::build_nxdomain_response(packet, &query)
                     }
-                }
-                DnsAction::Spoof => {
-                    // SPOOFED → return Pi's IP (anti-adblock bypass)
-                    let latency = query_start.elapsed().as_micros() as u64;
-                    stats.record_query(&query.qname, true, latency);
-                    if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
-                        dns::build_spoof_response(packet, &query, config.spoof_ip)
-                    } else {
-                        dns::build_nxdomain_response(packet, &query)
-                    }
-                }
-                DnsAction::Allow => {
-                    // ALLOWED → forward to upstream (with cache)
-                    match forwarder.forward(packet, &query.qname, query.qtype) {
-                        Some(resp) => {
-                            let latency = query_start.elapsed().as_micros() as u64;
-                            stats.record_query(&query.qname, false, latency);
-                            stats.cache_hits = forwarder.cache_hits;
-                            stats.cache_misses = forwarder.cache_misses;
-                            stats.upstream_errors = forwarder.upstream_errors;
-                            resp
-                        }
-                        None => {
-                            stats.upstream_errors += 1;
-                            continue; // All upstreams failed — drop
+                    DnsAction::Allow => {
+                        // ALLOWED → forward to upstream (with cache)
+                        match forwarder.forward(packet, &query.qname, query.qtype) {
+                            Some(resp) => {
+                                let latency = query_start.elapsed().as_micros() as u64;
+                                stats.record_query(&query.qname, false, latency);
+                                stats.cache_hits = forwarder.cache_hits;
+                                stats.cache_misses = forwarder.cache_misses;
+                                stats.upstream_errors = forwarder.upstream_errors;
+                                resp
+                            }
+                            None => {
+                                stats.upstream_errors += 1;
+                                continue; // All upstreams failed — drop
+                            }
                         }
                     }
                 }
-            }
-        };
+            };
 
         // Send response
         let _ = socket.send_to(&response, src);
 
         // Periodic stats
-        if stats.queries_total % STATS_INTERVAL == 0 && stats.queries_total > 0 {
+        if stats.queries_total > 0 && stats.queries_total.is_multiple_of(STATS_INTERVAL) {
             println!(
                 "[{}] queries={} blocked={} ({:.1}%) cache_hit={:.1}%",
                 stats.queries_total,
@@ -558,8 +608,10 @@ const SIG_TERM: i32 = 15;
 unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F) {
     use std::sync::OnceLock;
 
+    type HandlerList = std::sync::Mutex<Vec<Box<dyn Fn() + Send + Sync>>>;
+
     // Store handler in static to ensure it lives forever
-    static HANDLERS: OnceLock<std::sync::Mutex<Vec<Box<dyn Fn() + Send + Sync>>>> = OnceLock::new();
+    static HANDLERS: OnceLock<HandlerList> = OnceLock::new();
     let handlers = HANDLERS.get_or_init(|| std::sync::Mutex::new(Vec::new()));
 
     let mut guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
@@ -569,6 +621,7 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
 
     // We use a simple approach: store flag index in a global array
     // and use a single C signal handler that dispatches.
+    #[allow(clippy::declare_interior_mutable_const)]
     static FLAGS: [AtomicBool; 32] = {
         const INIT: AtomicBool = AtomicBool::new(false);
         [INIT; 32]
@@ -585,15 +638,13 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
 
     // Spawn a thread to poll the flag and call the Rust handler
     let sig_copy = sig;
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if FLAGS[sig_copy as usize].swap(false, Ordering::Relaxed) {
-                let handlers = HANDLERS.get().unwrap();
-                let guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
-                if idx < guard.len() {
-                    (guard[idx])();
-                }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if FLAGS[sig_copy as usize].swap(false, Ordering::Relaxed) {
+            let handlers = HANDLERS.get().unwrap();
+            let guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
+            if idx < guard.len() {
+                (guard[idx])();
             }
         }
     });

@@ -153,7 +153,7 @@ pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> 
     let flags: u16 = 0x8000  // QR=1 (response)
         | 0x0400           // AA=1 (authoritative)
         | (rd << 8)        // RD echoed
-        | 0x0080;          // RA=1
+        | 0x0080; // RA=1
     resp.extend_from_slice(&flags.to_be_bytes());
     // QDCOUNT=1
     resp.extend_from_slice(&1u16.to_be_bytes());
@@ -173,17 +173,17 @@ pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> 
     if query.qtype == QTYPE_AAAA {
         // AAAA record → :: (all zeros)
         resp.extend_from_slice(&QTYPE_AAAA.to_be_bytes()); // TYPE
-        resp.extend_from_slice(&QCLASS_IN.to_be_bytes());   // CLASS
-        resp.extend_from_slice(&300u32.to_be_bytes());       // TTL = 5 min
-        resp.extend_from_slice(&16u16.to_be_bytes());        // RDLENGTH = 16
-        resp.extend_from_slice(&[0u8; 16]);                  // :: (IPv6 zero)
+        resp.extend_from_slice(&QCLASS_IN.to_be_bytes()); // CLASS
+        resp.extend_from_slice(&300u32.to_be_bytes()); // TTL = 5 min
+        resp.extend_from_slice(&16u16.to_be_bytes()); // RDLENGTH = 16
+        resp.extend_from_slice(&[0u8; 16]); // :: (IPv6 zero)
     } else {
         // A record → 0.0.0.0
-        resp.extend_from_slice(&QTYPE_A.to_be_bytes());     // TYPE
-        resp.extend_from_slice(&QCLASS_IN.to_be_bytes());   // CLASS
-        resp.extend_from_slice(&300u32.to_be_bytes());       // TTL = 5 min
-        resp.extend_from_slice(&4u16.to_be_bytes());         // RDLENGTH = 4
-        resp.extend_from_slice(&[0, 0, 0, 0]);              // 0.0.0.0
+        resp.extend_from_slice(&QTYPE_A.to_be_bytes()); // TYPE
+        resp.extend_from_slice(&QCLASS_IN.to_be_bytes()); // CLASS
+        resp.extend_from_slice(&300u32.to_be_bytes()); // TTL = 5 min
+        resp.extend_from_slice(&4u16.to_be_bytes()); // RDLENGTH = 4
+        resp.extend_from_slice(&[0, 0, 0, 0]); // 0.0.0.0
     }
 
     resp
@@ -216,16 +216,16 @@ pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]
         // AAAA → return :: (no IPv6 spoof, forces fallback to A record)
         resp.extend_from_slice(&QTYPE_AAAA.to_be_bytes());
         resp.extend_from_slice(&QCLASS_IN.to_be_bytes());
-        resp.extend_from_slice(&60u32.to_be_bytes());   // TTL = 1 min (short)
+        resp.extend_from_slice(&60u32.to_be_bytes()); // TTL = 1 min (short)
         resp.extend_from_slice(&16u16.to_be_bytes());
-        resp.extend_from_slice(&[0u8; 16]);              // ::
+        resp.extend_from_slice(&[0u8; 16]); // ::
     } else {
         // A → return spoof IPv4
         resp.extend_from_slice(&QTYPE_A.to_be_bytes());
         resp.extend_from_slice(&QCLASS_IN.to_be_bytes());
-        resp.extend_from_slice(&60u32.to_be_bytes());   // TTL = 1 min (short)
+        resp.extend_from_slice(&60u32.to_be_bytes()); // TTL = 1 min (short)
         resp.extend_from_slice(&4u16.to_be_bytes());
-        resp.extend_from_slice(&ipv4);                   // Custom IP
+        resp.extend_from_slice(&ipv4); // Custom IP
     }
 
     resp
@@ -264,10 +264,10 @@ mod tests {
         // Header
         pkt.extend_from_slice(&0x1234u16.to_be_bytes()); // ID
         pkt.extend_from_slice(&0x0100u16.to_be_bytes()); // Flags: RD=1
-        pkt.extend_from_slice(&1u16.to_be_bytes());      // QDCOUNT=1
-        pkt.extend_from_slice(&0u16.to_be_bytes());      // ANCOUNT=0
-        pkt.extend_from_slice(&0u16.to_be_bytes());      // NSCOUNT=0
-        pkt.extend_from_slice(&0u16.to_be_bytes());      // ARCOUNT=0
+        pkt.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
+        pkt.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT=0
+        pkt.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT=0
+        pkt.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT=0
 
         // Question: QNAME
         for label in domain.split('.') {

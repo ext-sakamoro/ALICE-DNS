@@ -55,6 +55,7 @@ pub struct DnsQuery {
 /// Parse a DNS query packet.
 ///
 /// Returns `None` if the packet is malformed or not a standard query.
+#[must_use] 
 pub fn parse_query(packet: &[u8]) -> Option<DnsQuery> {
     if packet.len() < DNS_HEADER_SIZE {
         return None;
@@ -142,6 +143,7 @@ pub fn parse_query(packet: &[u8]) -> Option<DnsQuery> {
 /// - RD=1 (recursion desired, echoed from query)
 /// - RA=1 (recursion available)
 /// - RCODE=0 (no error)
+#[must_use] 
 pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end + 16);
 
@@ -193,6 +195,7 @@ pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> 
 ///
 /// Used for anti-adblock bypass: returns a real-looking IP (e.g. the Pi's own IP)
 /// so detection scripts think the domain is reachable, but actual content is empty.
+#[must_use] 
 pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end + 16);
 
@@ -234,6 +237,7 @@ pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]
 /// Build an NXDOMAIN response (domain does not exist).
 ///
 /// Used as an alternative to 0.0.0.0 blocking.
+#[must_use] 
 pub fn build_nxdomain_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end);
 

@@ -38,7 +38,7 @@ const BLOOM_SIZE_BYTES: usize = BLOOM_SIZE_BITS / 8; // 512KB
 ///
 /// Two-phase lookup:
 /// 1. Bloom filter: O(1), may return false positives
-/// 2. HashSet: O(1) amortized, exact confirmation on Bloom hits
+/// 2. `HashSet`: O(1) amortized, exact confirmation on Bloom hits
 pub struct DnsBloomEngine {
     /// Bloom filter bits (512KB)
     filter: Vec<u8>,
@@ -61,6 +61,7 @@ impl Default for DnsBloomEngine {
 
 impl DnsBloomEngine {
     /// Create an empty engine.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             filter: alloc::vec![0u8; BLOOM_SIZE_BYTES],
@@ -75,7 +76,7 @@ impl DnsBloomEngine {
 
     /// Load domains from a parsed hosts-format blocklist.
     ///
-    /// Clears existing data and rebuilds both Bloom filter and HashSet.
+    /// Clears existing data and rebuilds both Bloom filter and `HashSet`.
     pub fn load_domains(&mut self, domain_list: &[String]) {
         // Reset
         self.filter.fill(0);
@@ -99,6 +100,10 @@ impl DnsBloomEngine {
     /// [512KB]   bloom filter bits
     /// [rest]    newline-separated domain list
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if the binary data is too short or malformed.
     pub fn load_from_binary(&mut self, data: &[u8]) -> Result<(), &'static str> {
         if data.len() < 4 + BLOOM_SIZE_BYTES {
             return Err("Binary data too short");
@@ -131,6 +136,7 @@ impl DnsBloomEngine {
     }
 
     /// Serialize to binary format for hot-reload.
+    #[must_use] 
     pub fn to_binary(&self) -> Vec<u8> {
         let domain_count = self.domains.len() as u32;
         let domain_text: String = self
@@ -169,7 +175,7 @@ impl DnsBloomEngine {
     /// # Algorithm
     ///
     /// 0. Check whitelist (exact match) — if whitelisted, Allow immediately
-    /// 1. Walk domain hierarchy with Bloom filter + HashSet
+    /// 1. Walk domain hierarchy with Bloom filter + `HashSet`
     /// 2. If blocked AND the matching blocklist entry is also whitelisted → Spoof
     ///    (e.g. `0.html-load.com` blocked via parent `html-load.com` which is whitelisted)
     /// 3. If blocked normally → Block
@@ -237,12 +243,14 @@ impl DnsBloomEngine {
 
     /// Number of domains loaded.
     #[inline(always)]
+    #[must_use] 
     pub fn domain_count(&self) -> usize {
         self.domains.len()
     }
 
     /// Bloom filter memory usage in bytes.
     #[inline(always)]
+    #[must_use] 
     pub fn bloom_size_bytes(&self) -> usize {
         self.filter.len()
     }
@@ -250,6 +258,7 @@ impl DnsBloomEngine {
     /// Reset statistics.
     /// Number of whitelisted domains loaded.
     #[inline(always)]
+    #[must_use] 
     pub fn whitelist_count(&self) -> usize {
         self.whitelist.len()
     }
@@ -269,10 +278,10 @@ impl DnsBloomEngine {
 /// Ported from ALICE-Browser `src/simd/adblock.rs:bloom_hash`.
 #[inline(always)]
 fn bloom_hash(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325; // FNV offset basis
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
     for &b in bytes {
         h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3); // FNV prime
+        h = h.wrapping_mul(0x0000_0100_0000_01b3); // FNV prime
     }
     h
 }

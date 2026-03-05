@@ -15,12 +15,13 @@ use alloc::vec::Vec;
 /// Parse a hosts-format blocklist into a list of domains.
 ///
 /// Handles:
-/// - `0.0.0.0 domain.com` (StevenBlack format)
+/// - `0.0.0.0 domain.com` (`StevenBlack` format)
 /// - `127.0.0.1 domain.com` (alternative format)
 /// - `domain.com` (plain domain list)
 /// - `# comments` (ignored)
 /// - Empty lines (ignored)
 /// - `localhost`, `local`, `broadcasthost` (skipped)
+#[must_use] 
 pub fn parse_hosts(content: &str) -> Vec<String> {
     let mut domains = Vec::new();
     let skip_domains = [
@@ -82,6 +83,10 @@ pub fn parse_hosts(content: &str) -> Vec<String> {
 /// Load a blocklist from a file path.
 ///
 /// Returns parsed domain list or error.
+///
+/// # Errors
+///
+/// Returns an I/O error if the file cannot be read.
 pub fn load_from_file(path: &std::path::Path) -> std::io::Result<Vec<String>> {
     let content = std::fs::read_to_string(path)?;
     Ok(parse_hosts(&content))

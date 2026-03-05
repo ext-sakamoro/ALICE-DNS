@@ -56,6 +56,10 @@ pub struct UpstreamForwarder {
 
 impl UpstreamForwarder {
     /// Create a new forwarder with default upstream resolvers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the UDP socket cannot be bound.
     pub fn new() -> std::io::Result<Self> {
         Self::with_resolvers(vec![
             UpstreamResolver {
@@ -70,6 +74,10 @@ impl UpstreamForwarder {
     }
 
     /// Create with custom resolvers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the UDP socket cannot be bound or configured.
     pub fn with_resolvers(resolvers: Vec<UpstreamResolver>) -> std::io::Result<Self> {
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_read_timeout(Some(UPSTREAM_TIMEOUT))?;
@@ -97,7 +105,7 @@ impl UpstreamForwarder {
     /// Returns the response bytes to send back to the client.
     /// The transaction ID in the response is rewritten to match the original query.
     pub fn forward(&mut self, query_packet: &[u8], domain: &str, qtype: u16) -> Option<Vec<u8>> {
-        let cache_key = format!("{}:{}", domain, qtype);
+        let cache_key = format!("{domain}:{qtype}");
 
         // Check cache first
         if let Some(cached) = self.cache.get(&cache_key) {
@@ -120,29 +128,24 @@ impl UpstreamForwarder {
 
         // Try each upstream resolver
         for resolver in &self.resolvers {
-            match self.query_upstream(query_packet, &resolver.addr) {
-                Some(response) => {
-                    // Extract TTL from first answer record
-                    let ttl = extract_min_ttl(&response).unwrap_or(300);
-                    let capped_ttl = ttl.min(MAX_CACHE_TTL_SECS);
+            if let Some(response) = self.query_upstream(query_packet, &resolver.addr) {
+                // Extract TTL from first answer record
+                let ttl = extract_min_ttl(&response).unwrap_or(300);
+                let capped_ttl = ttl.min(MAX_CACHE_TTL_SECS);
 
-                    // Cache the response
-                    self.cache.put(
-                        cache_key,
-                        CachedResponse {
-                            data: response.clone(),
-                            cached_at: Instant::now(),
-                            ttl_secs: capped_ttl,
-                        },
-                    );
+                // Cache the response
+                self.cache.put(
+                    cache_key,
+                    CachedResponse {
+                        data: response.clone(),
+                        cached_at: Instant::now(),
+                        ttl_secs: capped_ttl,
+                    },
+                );
 
-                    return Some(response);
-                }
-                None => {
-                    self.upstream_errors += 1;
-                    continue; // Try next resolver
-                }
+                return Some(response);
             }
+            self.upstream_errors += 1;
         }
 
         None // All upstreams failed

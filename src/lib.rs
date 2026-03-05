@@ -1,3 +1,16 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    clippy::module_name_repetitions,
+    clippy::inline_always,
+    clippy::too_many_lines
+)]
+
 //! # ALICE-DNS — Bloom Filter DNS Ad-Blocker
 //!
 //! Lightweight Pi-hole replacement for Raspberry Pi.
@@ -16,7 +29,7 @@
 //!
 //! ## Components
 //!
-//! - **bloom**: 512KB Bloom Filter + HashSet (79K domains, <0.01% FP)
+//! - **bloom**: 512KB Bloom Filter + `HashSet` (79K domains, <0.01% FP)
 //! - **dns**: DNS packet parser & response builder (RFC 1035)
 //! - **upstream**: Upstream forwarding with ALICE-Cache (Markov prefetch)
 //! - **blocklist**: StevenBlack/hosts format parser

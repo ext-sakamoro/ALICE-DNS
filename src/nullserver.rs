@@ -49,7 +49,7 @@ use rustls::ServerConfig;
 
 // ─── Static Response Bodies ─────────────────────────────────────────
 
-/// 1x1 transparent GIF89a (43 bytes).
+/// 1x1 transparent `GIF89a` (43 bytes).
 ///
 /// Smallest valid GIF that renders as a fully transparent pixel.
 /// Used for all image requests (gif, png, jpg, webp, ico, svg).
@@ -152,6 +152,7 @@ pub struct NullServer {
 
 impl NullServer {
     /// Create a new null server bound to the given port (HTTP only).
+    #[must_use] 
     pub fn new(port: u16) -> Self {
         Self {
             port,
@@ -263,6 +264,10 @@ impl NullServer {
     /// Each connection is handled in its own thread with a 500ms timeout.
     ///
     /// Returns immediately after binding (non-blocking).
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if binding to the port fails.
     pub fn start_background(self) -> std::io::Result<()> {
         // ── HTTP listener ──
         let http_listener = TcpListener::bind(format!("0.0.0.0:{}", self.port))?;
@@ -379,10 +384,10 @@ impl NullServer {
     /// Detect what kind of content the client expects.
     ///
     /// Priority: HTTP method → URL extension → Accept header → fallback to 204.
+    #[allow(clippy::case_sensitive_file_extension_comparisons)] // path is already lowercased
     fn detect_content_kind(request: &[u8]) -> ContentKind {
-        let req = match std::str::from_utf8(request) {
-            Ok(s) => s,
-            Err(_) => return ContentKind::Other,
+        let Ok(req) = std::str::from_utf8(request) else {
+            return ContentKind::Other;
         };
 
         // OPTIONS → CORS preflight

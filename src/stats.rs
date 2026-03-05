@@ -3,9 +3,9 @@
 //! Optional ALICE-Analytics integration for Pi-hole dashboard replacement.
 //!
 //! When compiled with `--features analytics`:
-//! - HyperLogLog: unique domains queried (cardinality estimation)
-//! - CountMinSketch: top blocked domains (heavy hitters)
-//! - DDSketch: query latency percentiles (P50/P95/P99)
+//! - `HyperLogLog`: unique domains queried (cardinality estimation)
+//! - `CountMinSketch`: top blocked domains (heavy hitters)
+//! - `DDSketch`: query latency percentiles (P50/P95/P99)
 //!
 //! Without analytics feature: basic counters only.
 
@@ -48,6 +48,7 @@ impl Default for DnsStats {
 }
 
 impl DnsStats {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             queries_total: 0,
@@ -94,6 +95,7 @@ impl DnsStats {
 
     /// Block rate (0.0 to 1.0).
     #[inline(always)]
+    #[must_use] 
     pub fn block_rate(&self) -> f64 {
         if self.queries_total == 0 {
             return 0.0;
@@ -145,6 +147,7 @@ impl DnsStats {
     }
 
     /// Generate a JSON stats string (for API endpoint or logging).
+    #[must_use] 
     pub fn to_json(&self) -> String {
         let mut json = alloc::format!(
             r#"{{"queries_total":{},"queries_blocked":{},"queries_forwarded":{},"block_rate":{:.4},"cache_hits":{},"cache_misses":{},"upstream_errors":{},"bloom_false_positives":{}"#,

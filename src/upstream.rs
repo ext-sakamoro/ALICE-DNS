@@ -113,7 +113,7 @@ impl UpstreamForwarder {
             let elapsed = cached.cached_at.elapsed().as_secs();
             if elapsed < cached.ttl_secs {
                 self.cache_hits += 1;
-                let mut response = cached.data.clone();
+                let mut response = cached.data;
                 // Rewrite transaction ID to match this query
                 if response.len() >= 2 && query_packet.len() >= 2 {
                     response[0] = query_packet[0];
@@ -251,10 +251,7 @@ fn extract_min_ttl(response: &[u8]) -> Option<u64> {
         let rdlength = u16::from_be_bytes([response[pos + 8], response[pos + 9]]) as usize;
         pos += 10 + rdlength;
 
-        min_ttl = Some(match min_ttl {
-            Some(current) => current.min(ttl),
-            None => ttl,
-        });
+        min_ttl = Some(min_ttl.map_or(ttl, |current| current.min(ttl)));
     }
 
     min_ttl

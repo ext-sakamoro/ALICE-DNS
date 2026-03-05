@@ -61,7 +61,7 @@ impl Default for DnsBloomEngine {
 
 impl DnsBloomEngine {
     /// Create an empty engine.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             filter: alloc::vec![0u8; BLOOM_SIZE_BYTES],
@@ -136,7 +136,7 @@ impl DnsBloomEngine {
     }
 
     /// Serialize to binary format for hot-reload.
-    #[must_use] 
+    #[must_use]
     pub fn to_binary(&self) -> Vec<u8> {
         let domain_count = self.domains.len() as u32;
         let domain_text: String = self
@@ -243,27 +243,27 @@ impl DnsBloomEngine {
 
     /// Number of domains loaded.
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn domain_count(&self) -> usize {
         self.domains.len()
     }
 
     /// Bloom filter memory usage in bytes.
     #[inline(always)]
-    #[must_use] 
-    pub fn bloom_size_bytes(&self) -> usize {
+    #[must_use]
+    pub const fn bloom_size_bytes(&self) -> usize {
         self.filter.len()
     }
 
     /// Reset statistics.
     /// Number of whitelisted domains loaded.
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn whitelist_count(&self) -> usize {
         self.whitelist.len()
     }
 
-    pub fn reset_stats(&mut self) {
+    pub const fn reset_stats(&mut self) {
         self.queries_total = 0;
         self.queries_blocked = 0;
         self.queries_whitelisted = 0;
@@ -432,5 +432,139 @@ mod tests {
 
         assert_eq!(engine.queries_total, 3);
         assert_eq!(engine.queries_blocked, 2);
+    }
+
+    #[test]
+    fn test_empty_engine_allows_all() {
+        // ドメインをロードしていないエンジンは全クエリを Allow
+        let mut engine = DnsBloomEngine::new();
+        assert_eq!(engine.check_domain("ads.example.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("tracker.net"), DnsAction::Allow);
+        assert_eq!(engine.queries_total, 2);
+        assert_eq!(engine.queries_blocked, 0);
+    }
+
+    #[test]
+    fn test_reset_stats() {
+        let mut engine = DnsBloomEngine::new();
+        let domains: Vec<String> = vec!["blocked.com".into()];
+        engine.load_domains(&domains);
+
+        engine.check_domain("blocked.com");
+        engine.check_domain("allowed.com");
+        assert_eq!(engine.queries_total, 2);
+
+        engine.reset_stats();
+        assert_eq!(engine.queries_total, 0);
+        assert_eq!(engine.queries_blocked, 0);
+        assert_eq!(engine.queries_whitelisted, 0);
+        assert_eq!(engine.bloom_false_positives, 0);
+    }
+
+    #[test]
+    fn test_domain_count() {
+        let mut engine = DnsBloomEngine::new();
+        assert_eq!(engine.domain_count(), 0);
+
+        let domains: Vec<String> = vec!["a.com".into(), "b.com".into(), "c.com".into()];
+        engine.load_domains(&domains);
+        assert_eq!(engine.domain_count(), 3);
+    }
+
+    #[test]
+    fn test_bloom_size_bytes() {
+        let engine = DnsBloomEngine::new();
+        // 512KB = 524288バイト
+        assert_eq!(engine.bloom_size_bytes(), 524_288);
+    }
+
+    #[test]
+    fn test_whitelist_count() {
+        let mut engine = DnsBloomEngine::new();
+        assert_eq!(engine.whitelist_count(), 0);
+
+        let wl: Vec<String> = vec!["safe.com".into(), "trusted.org".into()];
+        engine.load_whitelist(&wl);
+        assert_eq!(engine.whitelist_count(), 2);
+    }
+
+    #[test]
+    fn test_load_domains_clears_previous() {
+        let mut engine = DnsBloomEngine::new();
+        let first: Vec<String> = vec!["old-ads.com".into()];
+        engine.load_domains(&first);
+        assert_eq!(engine.check_domain("old-ads.com"), DnsAction::Block);
+
+        // 新しいリストでリロードすると古いドメインはクリアされる
+        let second: Vec<String> = vec!["new-tracker.net".into()];
+        engine.load_domains(&second);
+        assert_eq!(engine.check_domain("old-ads.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("new-tracker.net"), DnsAction::Block);
+    }
+
+    #[test]
+    fn test_binary_too_short_error() {
+        let mut engine = DnsBloomEngine::new();
+        let result = engine.load_from_binary(&[]);
+        assert!(result.is_err());
+
+        let result2 = engine.load_from_binary(&[0u8; 100]);
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_binary_roundtrip_empty() {
+        // ドメインなしでもバイナリ往復が成立する
+        let engine = DnsBloomEngine::new();
+        let binary = engine.to_binary();
+
+        let mut engine2 = DnsBloomEngine::new();
+        engine2.load_from_binary(&binary).unwrap();
+        assert_eq!(engine2.domain_count(), 0);
+    }
+
+    #[test]
+    fn test_case_insensitive_blocking() {
+        let mut engine = DnsBloomEngine::new();
+        let domains: Vec<String> = vec!["mixedcase.com".into()];
+        engine.load_domains(&domains);
+
+        assert_eq!(engine.check_domain("mixedcase.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("MIXEDCASE.COM"), DnsAction::Block);
+        assert_eq!(engine.check_domain("MixedCase.Com"), DnsAction::Block);
+    }
+
+    #[test]
+    fn test_whitelist_case_insensitive() {
+        let mut engine = DnsBloomEngine::new();
+        let domains: Vec<String> = vec!["ads.example.com".into()];
+        engine.load_domains(&domains);
+        // ホワイトリストは大文字でロードしても小文字正規化されるのでマッチ
+        let wl: Vec<String> = vec!["ADS.EXAMPLE.COM".into()];
+        engine.load_whitelist(&wl);
+
+        assert_eq!(engine.check_domain("ads.example.com"), DnsAction::Allow);
+    }
+
+    #[test]
+    fn test_deep_subdomain_hierarchy_blocked() {
+        let mut engine = DnsBloomEngine::new();
+        let domains: Vec<String> = vec!["bad.net".into()];
+        engine.load_domains(&domains);
+
+        // 深いサブドメインも親ドメインでブロックされる
+        assert_eq!(engine.check_domain("a.b.c.d.e.bad.net"), DnsAction::Block);
+    }
+
+    #[test]
+    fn test_parent_domain_not_blocked_by_subdomain() {
+        let mut engine = DnsBloomEngine::new();
+        // サブドメインのみブロック → 親ドメインは Allow
+        let domains: Vec<String> = vec!["ads.parent.com".into()];
+        engine.load_domains(&domains);
+
+        assert_eq!(engine.check_domain("ads.parent.com"), DnsAction::Block);
+        assert_eq!(engine.check_domain("parent.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("other.parent.com"), DnsAction::Allow);
     }
 }

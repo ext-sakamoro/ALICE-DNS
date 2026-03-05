@@ -65,6 +65,7 @@ struct Config {
     tls_key_path: String,
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_args() -> Config {
     let args: Vec<String> = std::env::args().collect();
     let mut config = Config {
@@ -121,11 +122,11 @@ fn parse_args() -> Config {
                             let addr = if addr.contains(':') {
                                 addr.to_string()
                             } else {
-                                format!("{}:53", addr)
+                                format!("{addr}:53")
                             };
                             UpstreamResolver {
                                 addr,
-                                name: format!("Custom-{}", idx),
+                                name: format!("Custom-{idx}"),
                             }
                         })
                         .collect();
@@ -154,7 +155,7 @@ fn parse_args() -> Config {
                         "neutralize" | "n" => BlockMode::Neutralize,
                         "block" | "b" => BlockMode::Block,
                         other => {
-                            eprintln!("Unknown mode: '{}'. Use 'block' or 'neutralize'.", other);
+                            eprintln!("Unknown mode: '{other}'. Use 'block' or 'neutralize'.");
                             std::process::exit(1);
                         }
                     };
@@ -175,13 +176,13 @@ fn parse_args() -> Config {
             "--tls-cert" => {
                 i += 1;
                 if i < args.len() {
-                    config.tls_cert_path = args[i].clone();
+                    config.tls_cert_path.clone_from(&args[i]);
                 }
             }
             "--tls-key" => {
                 i += 1;
                 if i < args.len() {
-                    config.tls_key_path = args[i].clone();
+                    config.tls_key_path.clone_from(&args[i]);
                 }
             }
             "--version" | "-V" => {
@@ -259,7 +260,7 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
                     return;
                 }
             }
-            Err(e) => eprintln!("  Warning: Failed to read binary filter: {}", e),
+            Err(e) => eprintln!("  Warning: Failed to read binary filter: {e}"),
         }
     }
 
@@ -274,24 +275,25 @@ fn load_blocklist(engine: &mut DnsBloomEngine, config: &Config) {
                 // Save binary filter for faster future loads
                 let binary = engine.to_binary();
                 if let Err(e) = std::fs::write(&config.filter_bin_path, &binary) {
-                    eprintln!("  Warning: Could not save binary filter: {}", e);
+                    eprintln!("  Warning: Could not save binary filter: {e}");
                 }
 
                 println!(
-                    "  Loaded blocklist: {} domains from {:?}",
-                    count, config.blocklist_path
+                    "  Loaded blocklist: {} domains from {}",
+                    count,
+                    config.blocklist_path.display()
                 );
                 println!("  Bloom filter: {} KB", engine.bloom_size_bytes() / 1024);
             }
             Err(e) => {
-                eprintln!("  Error: Failed to read blocklist: {}", e);
+                eprintln!("  Error: Failed to read blocklist: {e}");
                 eprintln!("  Running with empty blocklist (forwarding only)");
             }
         }
     } else {
         eprintln!(
-            "  Warning: No blocklist found at {:?}",
-            config.blocklist_path
+            "  Warning: No blocklist found at {}",
+            config.blocklist_path.display()
         );
         eprintln!("  Running with empty blocklist (forwarding only)");
         eprintln!("  Run: update-blocklist.py to download StevenBlack/hosts");
@@ -304,24 +306,29 @@ fn load_whitelist(engine: &mut DnsBloomEngine, config: &Config) {
             Ok(content) => {
                 let domains: Vec<String> = content
                     .lines()
-                    .map(|l| l.trim())
+                    .map(str::trim)
                     .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                    .map(|l| l.to_lowercase())
+                    .map(str::to_lowercase)
                     .collect();
                 let count = domains.len();
                 engine.load_whitelist(&domains);
                 println!(
-                    "  Whitelist: {} domains from {:?}",
-                    count, config.whitelist_path
+                    "  Whitelist: {} domains from {}",
+                    count,
+                    config.whitelist_path.display()
                 );
             }
-            Err(e) => eprintln!("  Warning: Failed to read whitelist: {}", e),
+            Err(e) => eprintln!("  Warning: Failed to read whitelist: {e}"),
         }
     } else {
-        println!("  Whitelist: none (no file at {:?})", config.whitelist_path);
+        println!(
+            "  Whitelist: none (no file at {})",
+            config.whitelist_path.display()
+        );
     }
 }
 
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args();
 
@@ -445,7 +452,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match null_server.start_background() {
             Ok(()) => {}
             Err(e) => {
-                eprintln!("  Error: Failed to start null server: {}", e);
+                eprintln!("  Error: Failed to start null server: {e}");
                 eprintln!(
                     "  Ports {}/{} may be in use.",
                     config.null_http_port, config.null_https_port
@@ -508,7 +515,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if e.kind() == std::io::ErrorKind::Interrupted {
                     continue; // Signal interrupted recv — check flags
                 }
-                eprintln!("recv error: {}", e);
+                eprintln!("recv error: {e}");
                 continue;
             }
         };
@@ -517,9 +524,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let query_start = Instant::now();
 
         // Parse DNS query
-        let query = match dns::parse_query(packet) {
-            Some(q) => q,
-            None => continue, // Malformed — drop silently
+        let Some(query) = dns::parse_query(packet) else {
+            continue; // Malformed — drop silently
         };
 
         // Block DDR (Discovery of Designated Resolvers, RFC 9462)
@@ -558,19 +564,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     DnsAction::Allow => {
                         // ALLOWED → forward to upstream (with cache)
-                        match forwarder.forward(packet, &query.qname, query.qtype) {
-                            Some(resp) => {
-                                let latency = query_start.elapsed().as_micros() as u64;
-                                stats.record_query(&query.qname, false, latency);
-                                stats.cache_hits = forwarder.cache_hits;
-                                stats.cache_misses = forwarder.cache_misses;
-                                stats.upstream_errors = forwarder.upstream_errors;
-                                resp
-                            }
-                            None => {
-                                stats.upstream_errors += 1;
-                                continue; // All upstreams failed — drop
-                            }
+                        if let Some(resp) = forwarder.forward(packet, &query.qname, query.qtype) {
+                            let latency = query_start.elapsed().as_micros() as u64;
+                            stats.record_query(&query.qname, false, latency);
+                            stats.cache_hits = forwarder.cache_hits;
+                            stats.cache_misses = forwarder.cache_misses;
+                            stats.upstream_errors = forwarder.upstream_errors;
+                            resp
+                        } else {
+                            stats.upstream_errors += 1;
+                            continue; // All upstreams failed — drop
                         }
                     }
                 }
@@ -614,19 +617,22 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
     static HANDLERS: OnceLock<HandlerList> = OnceLock::new();
     let handlers = HANDLERS.get_or_init(|| std::sync::Mutex::new(Vec::new()));
 
-    let mut guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = handlers
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let idx = guard.len();
     guard.push(Box::new(handler));
     drop(guard);
 
     // We use a simple approach: store flag index in a global array
     // and use a single C signal handler that dispatches.
-    #[allow(clippy::declare_interior_mutable_const)]
+    #[allow(clippy::declare_interior_mutable_const, clippy::items_after_statements)]
     static FLAGS: [AtomicBool; 32] = {
         const INIT: AtomicBool = AtomicBool::new(false);
         [INIT; 32]
     };
 
+    #[allow(clippy::items_after_statements, clippy::cast_sign_loss)]
     extern "C" fn sig_handler(sig: i32) {
         if (sig as usize) < 32 {
             FLAGS[sig as usize].store(true, Ordering::Relaxed);
@@ -640,9 +646,12 @@ unsafe fn register_signal<F: Fn() + Send + Sync + 'static>(sig: i32, handler: F)
     let sig_copy = sig;
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(100));
+        #[allow(clippy::cast_sign_loss)]
         if FLAGS[sig_copy as usize].swap(false, Ordering::Relaxed) {
             let handlers = HANDLERS.get().unwrap();
-            let guard = handlers.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = handlers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if idx < guard.len() {
                 (guard[idx])();
             }

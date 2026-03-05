@@ -152,8 +152,8 @@ pub struct NullServer {
 
 impl NullServer {
     /// Create a new null server bound to the given port (HTTP only).
-    #[must_use] 
-    pub fn new(port: u16) -> Self {
+    #[must_use]
+    pub const fn new(port: u16) -> Self {
         Self {
             port,
             #[cfg(feature = "tls")]
@@ -597,12 +597,11 @@ mod tests {
         for ext in &[
             ".gif", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".avif",
         ] {
-            let path = format!("/pixel{}", ext);
+            let path = format!("/pixel{ext}");
             let req = make_request("GET", &path, "*/*");
             assert!(
                 matches!(NullServer::detect_content_kind(&req), ContentKind::Image),
-                "Failed for extension: {}",
-                ext
+                "Failed for extension: {ext}"
             );
         }
     }

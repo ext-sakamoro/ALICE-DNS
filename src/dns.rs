@@ -55,7 +55,7 @@ pub struct DnsQuery {
 /// Parse a DNS query packet.
 ///
 /// Returns `None` if the packet is malformed or not a standard query.
-#[must_use] 
+#[must_use]
 pub fn parse_query(packet: &[u8]) -> Option<DnsQuery> {
     if packet.len() < DNS_HEADER_SIZE {
         return None;
@@ -143,7 +143,7 @@ pub fn parse_query(packet: &[u8]) -> Option<DnsQuery> {
 /// - RD=1 (recursion desired, echoed from query)
 /// - RA=1 (recursion available)
 /// - RCODE=0 (no error)
-#[must_use] 
+#[must_use]
 pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end + 16);
 
@@ -195,7 +195,7 @@ pub fn build_blocked_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> 
 ///
 /// Used for anti-adblock bypass: returns a real-looking IP (e.g. the Pi's own IP)
 /// so detection scripts think the domain is reachable, but actual content is empty.
-#[must_use] 
+#[must_use]
 pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end + 16);
 
@@ -237,7 +237,7 @@ pub fn build_spoof_response(query_packet: &[u8], query: &DnsQuery, ipv4: [u8; 4]
 /// Build an NXDOMAIN response (domain does not exist).
 ///
 /// Used as an alternative to 0.0.0.0 blocking.
-#[must_use] 
+#[must_use]
 pub fn build_nxdomain_response(query_packet: &[u8], query: &DnsQuery) -> Vec<u8> {
     let mut resp = Vec::with_capacity(query.question_end);
 
@@ -359,5 +359,151 @@ mod tests {
         let mut pkt = build_test_query("test.com", QTYPE_A);
         pkt[2] |= 0x80; // Set QR=1
         assert!(parse_query(&pkt).is_none());
+    }
+
+    #[test]
+    fn test_parse_query_aaaa() {
+        let pkt = build_test_query("ipv6.example.com", QTYPE_AAAA);
+        let query = parse_query(&pkt).unwrap();
+        assert_eq!(query.qname, "ipv6.example.com");
+        assert_eq!(query.qtype, QTYPE_AAAA);
+    }
+
+    #[test]
+    fn test_parse_query_single_label_tld() {
+        // ラベルが1つの場合 (TLD直接クエリなど)
+        let pkt = build_test_query("com", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        assert_eq!(query.qname, "com");
+    }
+
+    #[test]
+    fn test_parse_query_id_echoed() {
+        let pkt = build_test_query("example.net", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        assert_eq!(query.id, 0x1234);
+    }
+
+    #[test]
+    fn test_blocked_response_id_matches() {
+        // ブロック応答のIDがクエリと一致する
+        let pkt = build_test_query("blocked.net", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_blocked_response(&pkt, &query);
+        let resp_id = u16::from_be_bytes([resp[0], resp[1]]);
+        assert_eq!(resp_id, query.id);
+    }
+
+    #[test]
+    fn test_blocked_response_qdcount() {
+        let pkt = build_test_query("blocked.example.com", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_blocked_response(&pkt, &query);
+        let qdcount = u16::from_be_bytes([resp[4], resp[5]]);
+        assert_eq!(qdcount, 1);
+    }
+
+    #[test]
+    fn test_nxdomain_nscount_zero() {
+        let pkt = build_test_query("nxdomain.test", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_nxdomain_response(&pkt, &query);
+        let nscount = u16::from_be_bytes([resp[8], resp[9]]);
+        assert_eq!(nscount, 0);
+    }
+
+    #[test]
+    fn test_spoof_response_ipv4() {
+        let pkt = build_test_query("spoofed.example.com", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let spoof_ip = [192, 168, 1, 100];
+        let resp = build_spoof_response(&pkt, &query, spoof_ip);
+
+        // 最後の4バイトがスプーフIPアドレス
+        let rdata = &resp[resp.len() - 4..];
+        assert_eq!(rdata, &spoof_ip);
+    }
+
+    #[test]
+    fn test_spoof_response_aaaa_returns_zeros() {
+        let pkt = build_test_query("spoofed.example.com", QTYPE_AAAA);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_spoof_response(&pkt, &query, [1, 2, 3, 4]);
+
+        // AAAA スプーフは :: (全ゼロ16バイト)
+        let rdata = &resp[resp.len() - 16..];
+        assert_eq!(rdata, &[0u8; 16]);
+    }
+
+    #[test]
+    fn test_spoof_response_short_ttl() {
+        // スプーフ応答のTTLは60秒 (短期)
+        let pkt = build_test_query("spoof.net", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_spoof_response(&pkt, &query, [10, 0, 0, 1]);
+
+        // ヘッダ(12) + 質問セクション後、答えレコード: 名前ポインタ(2) + type(2) + class(2) + TTL(4)
+        let question_size = query.question_end - 12;
+        let ttl_offset = 12 + question_size + 2 + 2 + 2;
+        let ttl = u32::from_be_bytes([
+            resp[ttl_offset],
+            resp[ttl_offset + 1],
+            resp[ttl_offset + 2],
+            resp[ttl_offset + 3],
+        ]);
+        assert_eq!(ttl, 60);
+    }
+
+    #[test]
+    fn test_blocked_response_ttl() {
+        // ブロック応答のTTLは300秒
+        let pkt = build_test_query("blocked.net", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_blocked_response(&pkt, &query);
+
+        let question_size = query.question_end - 12;
+        let ttl_offset = 12 + question_size + 2 + 2 + 2;
+        let ttl = u32::from_be_bytes([
+            resp[ttl_offset],
+            resp[ttl_offset + 1],
+            resp[ttl_offset + 2],
+            resp[ttl_offset + 3],
+        ]);
+        assert_eq!(ttl, 300);
+    }
+
+    #[test]
+    fn test_non_standard_opcode_rejected() {
+        // Opcode != 0 のパケットはリジェクト
+        let mut pkt = build_test_query("test.com", QTYPE_A);
+        // Opcode フィールド (bits 11-14 of flags)
+        pkt[2] |= 0x08; // Opcode = 1 (IQUERY)
+        assert!(parse_query(&pkt).is_none());
+    }
+
+    #[test]
+    fn test_qdcount_zero_rejected() {
+        // QDCOUNT=0のパケットはリジェクト
+        let mut pkt = build_test_query("test.com", QTYPE_A);
+        pkt[4] = 0;
+        pkt[5] = 0;
+        assert!(parse_query(&pkt).is_none());
+    }
+
+    #[test]
+    fn test_question_end_offset_correct() {
+        let pkt = build_test_query("ads.test.com", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        // question_end はパケット末尾と一致するはず
+        assert_eq!(query.question_end, pkt.len());
+    }
+
+    #[test]
+    fn test_nxdomain_id_echoed() {
+        let pkt = build_test_query("gone.example.com", QTYPE_A);
+        let query = parse_query(&pkt).unwrap();
+        let resp = build_nxdomain_response(&pkt, &query);
+        let resp_id = u16::from_be_bytes([resp[0], resp[1]]);
+        assert_eq!(resp_id, 0x1234);
     }
 }

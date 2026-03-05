@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 /// - `# comments` (ignored)
 /// - Empty lines (ignored)
 /// - `localhost`, `local`, `broadcasthost` (skipped)
-#[must_use] 
+#[must_use]
 pub fn parse_hosts(content: &str) -> Vec<String> {
     let mut domains = Vec::new();
     let skip_domains = [
@@ -176,5 +176,134 @@ ff00::0 ip6-localnet
         let content = "\n# This is a comment\n! Another comment style\n\n  # Indented comment\n0.0.0.0 valid.domain.com\n";
         let domains = parse_hosts(content);
         assert_eq!(domains, vec!["valid.domain.com"]);
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let domains = parse_hosts("");
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_only_comments() {
+        let content = "# comment\n# another\n! exclamation comment\n";
+        let domains = parse_hosts(content);
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_only_blank_lines() {
+        let content = "\n\n\n   \n\t\n";
+        let domains = parse_hosts(content);
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_domain_max_length_accepted() {
+        // 253文字ちょうどは受け入れる: "aaa...a.com" (249 'a' + ".com" = 253)
+        let long = format!("{}.com", "a".repeat(249));
+        assert_eq!(long.len(), 253);
+        let content = format!("0.0.0.0 {long}");
+        let domains = parse_hosts(&content);
+        assert_eq!(domains.len(), 1);
+    }
+
+    #[test]
+    fn test_domain_too_long_rejected() {
+        // 254文字は拒否する
+        let too_long = format!("{}.com", "a".repeat(250));
+        assert_eq!(too_long.len(), 254);
+        let content = format!("0.0.0.0 {too_long}");
+        let domains = parse_hosts(&content);
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_no_dot_domains_rejected() {
+        // ドットを含まないエントリは無効
+        let content = "plain-no-dot\nanother-no-dot\n";
+        let domains = parse_hosts(content);
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_127_0_0_1_format() {
+        let content = "127.0.0.1 ads.example.com\n127.0.0.1 tracker.bad.net\n";
+        let domains = parse_hosts(content);
+        assert_eq!(domains, vec!["ads.example.com", "tracker.bad.net"]);
+    }
+
+    #[test]
+    fn test_all_skip_domains_rejected() {
+        let content = "\
+0.0.0.0 localhost
+0.0.0.0 localhost.localdomain
+0.0.0.0 local
+0.0.0.0 broadcasthost
+0.0.0.0 ip6-localhost
+0.0.0.0 ip6-loopback
+0.0.0.0 ip6-localnet
+0.0.0.0 ip6-mcastprefix
+0.0.0.0 ip6-allnodes
+0.0.0.0 ip6-allrouters
+0.0.0.0 ip6-allhosts
+0.0.0.0 0.0.0.0
+";
+        let domains = parse_hosts(content);
+        assert!(domains.is_empty());
+    }
+
+    #[test]
+    fn test_sorted_output() {
+        let content = "\
+0.0.0.0 z.example.com
+0.0.0.0 a.example.com
+0.0.0.0 m.example.com
+";
+        let domains = parse_hosts(content);
+        assert_eq!(
+            domains,
+            vec!["a.example.com", "m.example.com", "z.example.com"]
+        );
+    }
+
+    #[test]
+    fn test_whitespace_trimming() {
+        // 行頭・行末の空白をトリムしてパース
+        let content = "   0.0.0.0 trimmed.example.com   \n";
+        let domains = parse_hosts(content);
+        assert_eq!(domains, vec!["trimmed.example.com"]);
+    }
+
+    #[test]
+    fn test_single_label_no_dot_rejected() {
+        // ドットなし単一ラベルは除外、ドットあり平文ドメインは通る
+        let content = "single-label-only\nad.example.org\n";
+        let domains = parse_hosts(content);
+        assert_eq!(domains, vec!["ad.example.org"]);
+    }
+
+    #[test]
+    fn test_mixed_formats() {
+        let content = "\
+# StevenBlack mixed format
+0.0.0.0 ads1.example.com
+127.0.0.1 ads2.example.com
+ads3.example.com
+# end
+";
+        let domains = parse_hosts(content);
+        assert_eq!(
+            domains,
+            vec!["ads1.example.com", "ads2.example.com", "ads3.example.com"]
+        );
+    }
+
+    #[test]
+    fn test_domain_with_space_in_plain_form_rejected() {
+        // スペースを含む行は平文ドメインとして認識されず除外される
+        let content = "domain with spaces.com\n0.0.0.0 valid.domain.net\n";
+        let domains = parse_hosts(content);
+        assert_eq!(domains, vec!["valid.domain.net"]);
     }
 }

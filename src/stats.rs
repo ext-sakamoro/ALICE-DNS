@@ -48,8 +48,8 @@ impl Default for DnsStats {
 }
 
 impl DnsStats {
-    #[must_use] 
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             queries_total: 0,
             queries_blocked: 0,
@@ -68,7 +68,7 @@ impl DnsStats {
     }
 
     /// Record a query event.
-    pub fn record_query(&mut self, domain: &str, blocked: bool, latency_us: u64) {
+    pub const fn record_query(&mut self, domain: &str, blocked: bool, latency_us: u64) {
         self.queries_total += 1;
 
         if blocked {
@@ -95,7 +95,7 @@ impl DnsStats {
 
     /// Block rate (0.0 to 1.0).
     #[inline(always)]
-    #[must_use] 
+    #[must_use]
     pub fn block_rate(&self) -> f64 {
         if self.queries_total == 0 {
             return 0.0;
@@ -147,7 +147,7 @@ impl DnsStats {
     }
 
     /// Generate a JSON stats string (for API endpoint or logging).
-    #[must_use] 
+    #[must_use]
     pub fn to_json(&self) -> String {
         let mut json = alloc::format!(
             r#"{{"queries_total":{},"queries_blocked":{},"queries_forwarded":{},"block_rate":{:.4},"cache_hits":{},"cache_misses":{},"upstream_errors":{},"bloom_false_positives":{}"#,
@@ -178,6 +178,7 @@ impl DnsStats {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -210,5 +211,120 @@ mod tests {
         let json = stats.to_json();
         assert!(json.contains("\"queries_total\":100"));
         assert!(json.contains("\"queries_blocked\":30"));
+    }
+
+    #[test]
+    fn test_block_rate_zero_queries() {
+        let stats = DnsStats::new();
+        assert_eq!(stats.block_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_block_rate_all_blocked() {
+        let mut stats = DnsStats::new();
+        stats.record_query("ads.com", true, 10);
+        stats.record_query("tracker.net", true, 20);
+        assert!((stats.block_rate() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_block_rate_none_blocked() {
+        let mut stats = DnsStats::new();
+        stats.record_query("google.com", false, 500);
+        stats.record_query("example.com", false, 300);
+        assert_eq!(stats.block_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_json_starts_and_ends_with_braces() {
+        let stats = DnsStats::new();
+        let json = stats.to_json();
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+    }
+
+    #[test]
+    fn test_json_contains_all_fields() {
+        let stats = DnsStats::new();
+        let json = stats.to_json();
+        for field in &[
+            "queries_total",
+            "queries_blocked",
+            "queries_forwarded",
+            "block_rate",
+            "cache_hits",
+            "cache_misses",
+            "upstream_errors",
+            "bloom_false_positives",
+        ] {
+            assert!(json.contains(field), "JSONフィールド不足: {field}");
+        }
+    }
+
+    #[test]
+    fn test_record_query_increments_forwarded() {
+        let mut stats = DnsStats::new();
+        stats.record_query("safe.com", false, 100);
+        assert_eq!(stats.queries_forwarded, 1);
+        assert_eq!(stats.queries_blocked, 0);
+        assert_eq!(stats.queries_total, 1);
+    }
+
+    #[test]
+    fn test_record_query_increments_blocked() {
+        let mut stats = DnsStats::new();
+        stats.record_query("bad.com", true, 5);
+        assert_eq!(stats.queries_blocked, 1);
+        assert_eq!(stats.queries_forwarded, 0);
+        assert_eq!(stats.queries_total, 1);
+    }
+
+    #[test]
+    fn test_default_counters_are_zero() {
+        let stats = DnsStats::new();
+        assert_eq!(stats.queries_total, 0);
+        assert_eq!(stats.queries_blocked, 0);
+        assert_eq!(stats.queries_forwarded, 0);
+        assert_eq!(stats.cache_hits, 0);
+        assert_eq!(stats.cache_misses, 0);
+        assert_eq!(stats.upstream_errors, 0);
+        assert_eq!(stats.bloom_false_positives, 0);
+    }
+
+    #[test]
+    fn test_block_rate_fractional() {
+        let mut stats = DnsStats::new();
+        // 1/4 = 0.25
+        stats.record_query("a.com", true, 1);
+        stats.record_query("b.com", false, 1);
+        stats.record_query("c.com", false, 1);
+        stats.record_query("d.com", false, 1);
+        assert!((stats.block_rate() - 0.25).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_json_block_rate_format() {
+        let mut stats = DnsStats::new();
+        stats.record_query("blocked.com", true, 10);
+        stats.record_query("allowed.com", false, 10);
+        let json = stats.to_json();
+        // block_rate は4桁小数点で出力される
+        assert!(json.contains("\"block_rate\":0.5000"));
+    }
+
+    #[test]
+    fn test_manual_counter_fields() {
+        // キャッシュ・アップストリームエラーは手動で更新できる
+        let mut stats = DnsStats::new();
+        stats.cache_hits = 42;
+        stats.cache_misses = 8;
+        stats.upstream_errors = 3;
+        stats.bloom_false_positives = 1;
+
+        let json = stats.to_json();
+        assert!(json.contains("\"cache_hits\":42"));
+        assert!(json.contains("\"cache_misses\":8"));
+        assert!(json.contains("\"upstream_errors\":3"));
+        assert!(json.contains("\"bloom_false_positives\":1"));
     }
 }

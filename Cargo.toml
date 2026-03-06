@@ -38,6 +38,9 @@ alice-cache = { path = "../ALICE-Cache" }
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
 
+[dev-dependencies]
+tempfile = "3.10"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

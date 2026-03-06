@@ -48,6 +48,9 @@ extern crate alloc;
 pub mod blocklist;
 pub mod bloom;
 pub mod dns;
+pub mod dnssec;
+pub mod doh;
+pub mod hotreload;
 pub mod nullserver;
 pub mod stats;
 pub mod upstream;
@@ -58,6 +61,9 @@ pub use bloom::{DnsAction, DnsBloomEngine};
 pub use dns::{
     build_blocked_response, build_nxdomain_response, build_spoof_response, parse_query, DnsQuery,
 };
+pub use dnssec::{DnskeyRecord, DnssecStatus, DnssecValidator, DsRecord, RrsigRecord};
+pub use doh::{DohClient, DohConfig, DohRequest, DohResponse};
+pub use hotreload::{FileWatcher, ReloadConfig, ReloadEvent, ReloadableBlocklist};
 pub use nullserver::NullServer;
 pub use stats::DnsStats;
 pub use upstream::UpstreamForwarder;

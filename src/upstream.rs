@@ -152,16 +152,35 @@ impl UpstreamForwarder {
     }
 
     /// Send query to a single upstream resolver.
+    ///
+    /// Validates that the response transaction ID matches the query.
+    /// Stale responses from previous queries are discarded (max 3 retries).
     fn query_upstream(&self, query_packet: &[u8], addr: &str) -> Option<Vec<u8>> {
+        if query_packet.len() < 2 {
+            return None;
+        }
+
         if self.socket.send_to(query_packet, addr).is_err() {
             return None;
         }
 
+        let expected_id = [query_packet[0], query_packet[1]];
         let mut buf = [0u8; MAX_DNS_RESPONSE];
-        match self.socket.recv_from(&mut buf) {
-            Ok((size, _)) => Some(buf[..size].to_vec()),
-            Err(_) => None,
+
+        // Retry up to 3 times to skip stale responses from previous queries
+        for _ in 0..3 {
+            match self.socket.recv_from(&mut buf) {
+                Ok((size, _)) if size >= 2 => {
+                    if buf[0] == expected_id[0] && buf[1] == expected_id[1] {
+                        return Some(buf[..size].to_vec());
+                    }
+                    // Transaction ID mismatch — stale response, try again
+                }
+                _ => return None, // Timeout or error
+            }
         }
+
+        None // All retries consumed by stale responses
     }
 
     /// Cache hit rate (0.0 to 1.0).

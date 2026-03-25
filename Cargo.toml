@@ -2,7 +2,7 @@
 name = "alice-dns"
 version = "0.1.0"
 edition = "2021"
-authors = ["Moroya Sakamoto"]
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "ALICE DNS Ad-Blocker — Bloom Filter O(1) domain blocking for Raspberry Pi"
 license = "AGPL-3.0"
 repository = "https://github.com/ext-sakamoro/ALICE-DNS"

@@ -8,7 +8,14 @@
     clippy::many_single_char_names,
     clippy::module_name_repetitions,
     clippy::inline_always,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::doc_markdown,
+    clippy::missing_const_for_fn,
+    clippy::too_long_first_doc_paragraph,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::match_same_arms,
+    clippy::manual_let_else
 )]
 
 //! # ALICE-DNS — Bloom Filter DNS Ad-Blocker
@@ -48,6 +55,8 @@ extern crate alloc;
 pub mod blocklist;
 pub mod bloom;
 pub mod dns;
+pub mod dnssec_verify;
+pub use dnssec_verify::{verify_rrsig, DnssecAlgorithm, RrsigCore};
 pub mod dnssec;
 pub mod doh;
 pub mod hotreload;

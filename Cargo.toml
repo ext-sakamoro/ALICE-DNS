@@ -1,6 +1,6 @@
 [package]
 name = "alice-dns"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "ALICE DNS Ad-Blocker — Bloom Filter O(1) domain blocking for Raspberry Pi"
@@ -33,6 +33,7 @@ analytics = []
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
+alice-blockchain = { path = "../ALICE-Blockchain" }
 
 # TLS (HTTPS null server for ad neutralization) — only when `tls` feature is enabled.
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"], optional = true }

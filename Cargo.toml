@@ -33,7 +33,7 @@ analytics = []
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
-alice-blockchain = { path = "../ALICE-Blockchain" }
+alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "b2c80d06a17d67e100c3d220d68f4ad003e6ea5a" }
 
 # TLS (HTTPS null server for ad neutralization) — only when `tls` feature is enabled.
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"], optional = true }

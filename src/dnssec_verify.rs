@@ -16,7 +16,7 @@
 //! It returns `true` when the signature verifies. Trust-chain construction
 //! (`DS` → `DNSKEY` walk) is delegated to the caller.
 
-use alice_blockchain::{PublicKey, Signature};
+use alice_sign::{PublicKey, Signature};
 
 // ---------------------------------------------------------------------------
 // DnssecAlgorithm
@@ -149,7 +149,7 @@ fn verify_ed25519(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alice_blockchain::KeyPair;
+    use alice_sign::KeyPair;
 
     fn sample_core() -> RrsigCore {
         RrsigCore {

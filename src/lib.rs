@@ -61,6 +61,7 @@ pub mod dnssec;
 pub mod doh;
 pub mod hotreload;
 pub mod nullserver;
+pub mod spoof_ip;
 pub mod stats;
 pub mod upstream;
 

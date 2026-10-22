@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use alice_dns::{
-    blocklist, dns, upstream::UpstreamResolver, DnsAction, DnsBloomEngine, DnsStats, NullServer,
-    UpstreamForwarder,
+    blocklist, dns, spoof_ip, upstream::UpstreamResolver, DnsAction, DnsBloomEngine, DnsStats,
+    NullServer, UpstreamForwarder,
 };
 
 /// Default blocklist path.
@@ -46,7 +46,7 @@ const DEFAULT_TLS_KEY: &str = "/etc/alice-dns/tls.key";
 enum BlockMode {
     /// Traditional: return 0.0.0.0 for blocked domains.
     Block,
-    /// Neutralize: return Pi's IP + serve empty HTTP content.
+    /// Neutralize: return the spoof IP + serve empty HTTP content.
     /// Anti-adblock bypass: DNS resolves, clicks are prevented.
     Neutralize,
 }
@@ -73,7 +73,8 @@ fn parse_args() -> Config {
         blocklist_path: PathBuf::from(DEFAULT_BLOCKLIST),
         filter_bin_path: PathBuf::from(DEFAULT_FILTER_BIN),
         whitelist_path: PathBuf::from(DEFAULT_WHITELIST),
-        spoof_ip: [192, 168, 11, 7], // Default: Raspberry Pi's LAN IP
+        // settled after the arguments: --spoof-ip, or this host's address toward the upstream (no fixed default)
+        spoof_ip: [0; 4],
         upstream_resolvers: vec![
             UpstreamResolver {
                 addr: "1.1.1.1:53".into(),
@@ -91,6 +92,7 @@ fn parse_args() -> Config {
         tls_key_path: DEFAULT_TLS_KEY.into(),
     };
 
+    let mut spoof_given: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -135,17 +137,10 @@ fn parse_args() -> Config {
             "--spoof-ip" | "-s" => {
                 i += 1;
                 if i < args.len() {
-                    let parts: Vec<&str> = args[i].split('.').collect();
-                    if parts.len() == 4 {
-                        if let (Ok(a), Ok(b), Ok(c), Ok(d)) = (
-                            parts[0].parse::<u8>(),
-                            parts[1].parse::<u8>(),
-                            parts[2].parse::<u8>(),
-                            parts[3].parse::<u8>(),
-                        ) {
-                            config.spoof_ip = [a, b, c, d];
-                        }
-                    }
+                    spoof_given = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --spoof-ip needs an IPv4 address");
+                    std::process::exit(1);
                 }
             }
             "--mode" | "-m" => {
@@ -202,6 +197,19 @@ fn parse_args() -> Config {
         i += 1;
     }
 
+    let upstreams: Vec<&str> = config
+        .upstream_resolvers
+        .iter()
+        .map(|u| u.addr.as_str())
+        .collect();
+    match spoof_ip::resolve(spoof_given.as_deref(), &upstreams) {
+        Ok(ip) => config.spoof_ip = ip.octets(),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
+
     config
 }
 
@@ -216,7 +224,7 @@ fn print_help() {
     println!("  -w, --whitelist <PATH>     Whitelist file path (one domain per line)");
     println!("  -u, --upstream <ADDR,...>   Upstream DNS (default: 1.1.1.1,8.8.8.8)");
     println!(
-        "  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)"
+        "  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: this host's IPv4 toward the upstream)"
     );
     println!("  -m, --mode <MODE>          block (default) or neutralize");
     println!(
@@ -233,7 +241,7 @@ fn print_help() {
         "  block       Return 0.0.0.0 for blocked domains (traditional, may break anti-adblock)"
     );
     println!(
-        "  neutralize  Return Pi's IP + HTTP null server (anti-adblock bypass, click prevention)"
+        "  neutralize  Return the spoof IP + HTTP null server (anti-adblock bypass, click prevention)"
     );
     println!();
     println!("Signals:");
@@ -542,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         stats.record_query(&query.qname, true, latency);
                         if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
                             if config.block_mode == BlockMode::Neutralize {
-                                // NEUTRALIZE → spoof to Pi's IP (HTTP null server handles requests)
+                                // NEUTRALIZE → the spoof IP (this host's HTTP null server handles requests)
                                 dns::build_spoof_response(packet, &query, config.spoof_ip)
                             } else {
                                 // BLOCK → 0.0.0.0 / :: (traditional)
@@ -553,7 +561,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     DnsAction::Spoof => {
-                        // SPOOFED → return Pi's IP (anti-adblock bypass)
+                        // SPOOFED → return the spoof IP (anti-adblock bypass)
                         let latency = query_start.elapsed().as_micros() as u64;
                         stats.record_query(&query.qname, true, latency);
                         if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {

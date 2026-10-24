@@ -26,7 +26,7 @@ dependencies = [
 [[package]]
 name = "alice-sign"
 version = "0.1.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Sign?rev=6b79a0bad3db4c7de1719251d6a2a9405fbc0ee2#6b79a0bad3db4c7de1719251d6a2a9405fbc0ee2"
+source = "git+https://github.com/ext-sakamoro/ALICE-Sign?rev=8a1b00d800082187a8693732a9ffb806c98814e7#8a1b00d800082187a8693732a9ffb806c98814e7"
 dependencies = [
  "ed25519-dalek",
  "sha2",

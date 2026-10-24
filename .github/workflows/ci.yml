@@ -10,6 +10,44 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    env:
+      # the passed-test count of the feature set below at the commit that set it;
+      # fewer passed tests (a removed or skipped test, or none at all) is a failure
+      MIN_PASSED: "156"
+    steps:
+      # cargo reads the manifest of every path dependency, so ALICE-Cache is checked
+      # out next to this repository at a fixed commit
+      - uses: actions/checkout@v5
+        with:
+          path: ALICE-DNS
+      - uses: actions/checkout@v5
+        with:
+          repository: ext-sakamoro/ALICE-Cache
+          ref: 48ffb79d85e0ce272dfc35921da611026423e8d3
+          path: ALICE-Cache
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test (lib, integration, doctests)
+        working-directory: ALICE-DNS
+        run: |
+          # the default shell has no pipefail: without it cargo's exit status is lost in the pipe
+          set -o pipefail
+          log="$(mktemp)"
+          cargo test --locked --all-features 2>&1 | tee "${log}"
+          passed=$(grep -E '^test result: ' "${log}" | awk '{s += $4} END {print s + 0}')
+          failed=$(grep -E '^test result: ' "${log}" | awk '{s += $6} END {print s + 0}')
+          echo "passed: ${passed} (minimum ${MIN_PASSED}), failed: ${failed}"
+          if [ "${failed}" -ne 0 ] || grep -E '^test result: ' "${log}" | grep -vE '^test result: ok\. ' >/dev/null; then
+            echo "::error::${failed} tests failed"
+            exit 1
+          fi
+          if [ "${passed}" -lt "${MIN_PASSED}" ]; then
+            echo "::error::${passed} tests passed, fewer than ${MIN_PASSED}"
+            exit 1
+          fi
+
   clippy:
     name: Clippy (all targets, all features, pedantic, -D warnings)
     runs-on: ubuntu-latest

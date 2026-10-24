@@ -200,13 +200,16 @@ impl DnsStats {
 
         #[cfg(feature = "analytics")]
         {
-            json.push_str(&alloc::format!(
+            use core::fmt::Write as _;
+            write!(
+                json,
                 r#","unique_domains":{},"latency_p50":{:.0},"latency_p95":{:.0},"latency_p99":{:.0}"#,
                 self.unique_domains().round() as u64,
                 self.latency_quantile(0.50),
                 self.latency_quantile(0.95),
                 self.latency_quantile(0.99),
-            ));
+            )
+            .expect("writing to a String cannot fail");
         }
 
         json.push('}');

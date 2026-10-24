@@ -426,7 +426,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             server
                         }
                         Err(e) => {
-                            eprintln!("  Warning: TLS setup failed: {}", e);
+                            eprintln!("  Warning: TLS setup failed: {e}");
                             eprintln!("  Falling back to HTTP only");
                             NullServer::new(config.null_http_port)
                         }

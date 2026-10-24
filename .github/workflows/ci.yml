@@ -10,6 +10,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  clippy:
+    name: Clippy (all targets, all features, pedantic, -D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      # cargo reads the manifest of every path dependency, so ALICE-Cache is checked
+      # out next to this repository at a fixed commit
+      - uses: actions/checkout@v5
+        with:
+          path: ALICE-DNS
+      - uses: actions/checkout@v5
+        with:
+          repository: ext-sakamoro/ALICE-Cache
+          ref: 48ffb79d85e0ce272dfc35921da611026423e8d3
+          path: ALICE-Cache
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Clippy
+        working-directory: ALICE-DNS
+        run: cargo clippy --locked --all-features --all-targets -- -W clippy::pedantic -D warnings
+
   fmt:
     name: Format
     runs-on: ubuntu-latest

@@ -192,7 +192,7 @@ impl NullServer {
         let cert_file = std::fs::File::open(cert_path).map_err(|e| {
             std::io::Error::new(
                 e.kind(),
-                format!("Failed to open TLS certificate '{}': {}", cert_path, e),
+                format!("Failed to open TLS certificate '{cert_path}': {e}"),
             )
         })?;
         let mut cert_reader = std::io::BufReader::new(cert_file);
@@ -201,17 +201,14 @@ impl NullServer {
             .map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!(
-                        "Failed to parse PEM certificates from '{}': {}",
-                        cert_path, e
-                    ),
+                    format!("Failed to parse PEM certificates from '{cert_path}': {e}"),
                 )
             })?;
 
         if cert_chain.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("No certificates found in '{}'", cert_path),
+                format!("No certificates found in '{cert_path}'"),
             ));
         }
 
@@ -219,7 +216,7 @@ impl NullServer {
         let key_file = std::fs::File::open(key_path).map_err(|e| {
             std::io::Error::new(
                 e.kind(),
-                format!("Failed to open TLS private key '{}': {}", key_path, e),
+                format!("Failed to open TLS private key '{key_path}': {e}"),
             )
         })?;
         let mut key_reader = std::io::BufReader::new(key_file);
@@ -227,13 +224,13 @@ impl NullServer {
             .map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to parse PEM private key from '{}': {}", key_path, e),
+                    format!("Failed to parse PEM private key from '{key_path}': {e}"),
                 )
             })?
             .ok_or_else(|| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("No private key found in '{}'", key_path),
+                    format!("No private key found in '{key_path}'"),
                 )
             })?;
 
@@ -244,7 +241,7 @@ impl NullServer {
             .map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Failed to build TLS server config: {}", e),
+                    format!("Failed to build TLS server config: {e}"),
                 )
             })?;
 
@@ -287,27 +284,22 @@ impl NullServer {
         #[cfg(feature = "tls")]
         if let Some((https_port, tls_config)) = self.tls {
             let https_listener =
-                TcpListener::bind(format!("0.0.0.0:{}", https_port)).map_err(|e| {
+                TcpListener::bind(format!("0.0.0.0:{https_port}")).map_err(|e| {
                     std::io::Error::new(
                         e.kind(),
-                        format!("Failed to bind HTTPS port {}: {}", https_port, e),
+                        format!("Failed to bind HTTPS port {https_port}: {e}"),
                     )
                 })?;
-            println!(
-                "  Listening on 0.0.0.0:{} (HTTPS null responses)",
-                https_port
-            );
+            println!("  Listening on 0.0.0.0:{https_port} (HTTPS null responses)");
 
             thread::Builder::new()
                 .name("null-https".into())
                 .spawn(move || {
-                    for stream in https_listener.incoming() {
-                        if let Ok(tcp_stream) = stream {
-                            let cfg = Arc::clone(&tls_config);
-                            thread::spawn(move || {
-                                Self::handle_tls_connection(tcp_stream, cfg);
-                            });
-                        }
+                    for tcp_stream in https_listener.incoming().flatten() {
+                        let cfg = Arc::clone(&tls_config);
+                        thread::spawn(move || {
+                            Self::handle_tls_connection(tcp_stream, cfg);
+                        });
                     }
                 })?;
         }

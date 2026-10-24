@@ -8,6 +8,9 @@ All notable changes to ALICE-DNS will be documented in this file.
 - Ed25519 の署名・検証を `alice-blockchain` から `alice-sign` (MIT OR Apache-2.0、公開) に移した 鍵・署名の byte 列は同じ (`alice-sign` の golden で固定) `alice-blockchain` への依存は無くなった
 - **License: `AGPL-3.0` → `AGPL-3.0 OR LicenseRef-Commercial` (dual-licensed、2026-09-27)** AGPL 側の条件は変更なし (既存 AGPL 利用者への影響ゼロ)、商用という選択肢が追加されただけ SPDX が AGPL 単独だと cargo-deny / FOSSA / SBOM に「商用オプションなし」と見えるため宣言を dual に 変更点: SPDX / `LICENSE` → `LICENSE-AGPL` / `LICENSE-COMMERCIAL.md` (商用トリガー 6 条件 = クローズド製品・商用 SaaS・エッジ / ファームウェア配布・plugin 再配布・プラットフォーム NDA・保証、社内利用は AGPL 側で無償と明記) / README の選択肢表 商用窓口は法人 `contact@extoria.co.jp`
 
+### Fixed
+- feature `analytics` が compile できなかった (`alice-analytics` の依存が無かった) `alice-analytics` (git rev) を optional で引き、`DnsStats::unique_domains` / `blocked_estimate` / `latency_quantile` を足した この feature の下では `DnsStats::new` / `record_query` は const ではない
+
 ## [0.1.0] - 2026-02-23
 
 ### Added

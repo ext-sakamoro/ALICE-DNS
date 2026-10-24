@@ -28,11 +28,12 @@ path = "src/main.rs"
 #            Activate with: cargo build --features analytics
 default = []
 tls = ["dep:rustls", "dep:rustls-pemfile"]
-analytics = []
+analytics = ["dep:alice-analytics"]
 
 [dependencies]
 # ALICE Ecosystem
 alice-cache = { path = "../ALICE-Cache" }
+alice-analytics = { version = "0.7", git = "https://github.com/ext-sakamoro/ALICE-Analytics", rev = "f3a58e3acd486441ae1c70efbaff6acdbbfdeed9", optional = true }
 alice-sign = { version = "0.1", git = "https://github.com/ext-sakamoro/ALICE-Sign", rev = "6b79a0bad3db4c7de1719251d6a2a9405fbc0ee2" }
 
 # TLS (HTTPS null server for ad neutralization) — only when `tls` feature is enabled.

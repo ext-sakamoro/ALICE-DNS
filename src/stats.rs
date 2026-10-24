@@ -12,7 +12,7 @@
 use alloc::string::String;
 
 #[cfg(feature = "analytics")]
-use alice_analytics::{CountMinSketch, DDSketch, HyperLogLog};
+use alice_analytics::sketch::{CountMinSketch, DDSketch, HyperLogLog};
 
 /// DNS server statistics.
 pub struct DnsStats {
@@ -48,6 +48,7 @@ impl Default for DnsStats {
 }
 
 impl DnsStats {
+    #[cfg(not(feature = "analytics"))]
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -58,39 +59,75 @@ impl DnsStats {
             cache_misses: 0,
             upstream_errors: 0,
             bloom_false_positives: 0,
-            #[cfg(feature = "analytics")]
+        }
+    }
+
+    #[cfg(feature = "analytics")]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            queries_total: 0,
+            queries_blocked: 0,
+            queries_forwarded: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            upstream_errors: 0,
+            bloom_false_positives: 0,
             unique_domains: HyperLogLog::new(),
-            #[cfg(feature = "analytics")]
             top_blocked: CountMinSketch::new(),
-            #[cfg(feature = "analytics")]
             latency_sketch: DDSketch::new(0.01),
         }
     }
 
-    /// Record a query event.
-    pub const fn record_query(&mut self, domain: &str, blocked: bool, latency_us: u64) {
+    /// Count one query as blocked or forwarded.
+    const fn count_query(&mut self, blocked: bool) {
         self.queries_total += 1;
-
         if blocked {
             self.queries_blocked += 1;
-            #[cfg(feature = "analytics")]
-            self.top_blocked.add_str(domain);
         } else {
             self.queries_forwarded += 1;
         }
+    }
 
-        #[cfg(feature = "analytics")]
-        {
-            self.unique_domains.add_str(domain);
-            self.latency_sketch.insert(latency_us as f64);
-        }
+    /// Record a query event.
+    #[cfg(not(feature = "analytics"))]
+    pub const fn record_query(&mut self, domain: &str, blocked: bool, latency_us: u64) {
+        let _ = (domain, latency_us);
+        self.count_query(blocked);
+    }
 
-        // Suppress unused variable warnings when analytics disabled
-        #[cfg(not(feature = "analytics"))]
-        {
-            let _ = domain;
-            let _ = latency_us;
+    /// Record a query event: the domain goes into the distinct-domain estimate (and the
+    /// blocked-domain counts when blocked), the latency into the latency sketch.
+    #[cfg(feature = "analytics")]
+    pub fn record_query(&mut self, domain: &str, blocked: bool, latency_us: u64) {
+        self.count_query(blocked);
+        if blocked {
+            self.top_blocked.insert_bytes(domain.as_bytes());
         }
+        self.unique_domains.insert_bytes(domain.as_bytes());
+        #[allow(clippy::cast_precision_loss)]
+        self.latency_sketch.insert(latency_us as f64);
+    }
+
+    /// Estimated number of distinct domains queried.
+    #[cfg(feature = "analytics")]
+    #[must_use]
+    pub fn unique_domains(&self) -> f64 {
+        self.unique_domains.cardinality()
+    }
+
+    /// Estimated number of times `domain` was blocked (never below the true count).
+    #[cfg(feature = "analytics")]
+    #[must_use]
+    pub fn blocked_estimate(&self, domain: &str) -> u64 {
+        self.top_blocked.estimate_bytes(domain.as_bytes())
+    }
+
+    /// Latency quantile `q` in microseconds (0 before any query).
+    #[cfg(feature = "analytics")]
+    #[must_use]
+    pub fn latency_quantile(&self, q: f64) -> f64 {
+        self.latency_sketch.quantile(q)
     }
 
     /// Block rate (0.0 to 1.0).
@@ -127,19 +164,19 @@ impl DnsStats {
             println!("├─────────────────────────────────────────┤");
             println!(
                 "│ Unique domains:     {:>18} │",
-                self.unique_domains.count() as u64
+                self.unique_domains().round() as u64
             );
             println!(
                 "│ Latency P50:        {:>15.0} μs │",
-                self.latency_sketch.quantile(0.50).unwrap_or(0.0)
+                self.latency_quantile(0.50)
             );
             println!(
                 "│ Latency P95:        {:>15.0} μs │",
-                self.latency_sketch.quantile(0.95).unwrap_or(0.0)
+                self.latency_quantile(0.95)
             );
             println!(
                 "│ Latency P99:        {:>15.0} μs │",
-                self.latency_sketch.quantile(0.99).unwrap_or(0.0)
+                self.latency_quantile(0.99)
             );
         }
 
@@ -165,10 +202,10 @@ impl DnsStats {
         {
             json.push_str(&alloc::format!(
                 r#","unique_domains":{},"latency_p50":{:.0},"latency_p95":{:.0},"latency_p99":{:.0}"#,
-                self.unique_domains.count() as u64,
-                self.latency_sketch.quantile(0.50).unwrap_or(0.0),
-                self.latency_sketch.quantile(0.95).unwrap_or(0.0),
-                self.latency_sketch.quantile(0.99).unwrap_or(0.0),
+                self.unique_domains().round() as u64,
+                self.latency_quantile(0.50),
+                self.latency_quantile(0.95),
+                self.latency_quantile(0.99),
             ));
         }
 
@@ -326,5 +363,64 @@ mod tests {
         assert!(json.contains("\"cache_misses\":8"));
         assert!(json.contains("\"upstream_errors\":3"));
         assert!(json.contains("\"bloom_false_positives\":1"));
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn analytics_counts_distinct_domains() {
+        let mut stats = DnsStats::new();
+        for i in 0..200u32 {
+            let domain = alloc::format!("host{i}.example.com");
+            // every domain twice: the estimate counts it once
+            stats.record_query(&domain, false, 100);
+            stats.record_query(&domain, false, 100);
+        }
+        let unique = stats.unique_domains();
+        assert!((unique - 200.0).abs() <= 200.0 * 0.02, "unique {unique}");
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn analytics_counts_blocked_domains_only() {
+        let mut stats = DnsStats::new();
+        for _ in 0..7 {
+            stats.record_query("ads.example.com", true, 10);
+        }
+        for _ in 0..5 {
+            stats.record_query("news.example.com", false, 10);
+        }
+        // count-min never undercounts, and nothing else shares these rows here
+        assert_eq!(stats.blocked_estimate("ads.example.com"), 7);
+        assert_eq!(stats.blocked_estimate("news.example.com"), 0);
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn analytics_latency_quantiles_within_the_sketch_bound() {
+        let mut stats = DnsStats::new();
+        assert_eq!(stats.latency_quantile(0.5), 0.0);
+        for us in 1..=1000u64 {
+            stats.record_query("example.com", false, us);
+        }
+        // DDSketch with alpha 0.01: each quantile within 1 % of the true order statistic
+        for (q, exact) in [(0.50, 500.0), (0.95, 950.0), (0.99, 990.0)] {
+            let got = stats.latency_quantile(q);
+            assert!(
+                (got - exact).abs() <= exact * 0.01 + 1.0,
+                "q {q}: {got} vs {exact}"
+            );
+        }
+    }
+
+    #[cfg(feature = "analytics")]
+    #[test]
+    fn analytics_fields_in_json() {
+        let mut stats = DnsStats::new();
+        stats.record_query("a.example.com", true, 100);
+        stats.record_query("b.example.com", false, 300);
+        let json = stats.to_json();
+        assert!(json.contains("\"unique_domains\":2"), "{json}");
+        assert!(json.contains("\"latency_p50\":"), "{json}");
+        assert!(json.ends_with('}'));
     }
 }

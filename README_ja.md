@@ -386,7 +386,9 @@ ALICE-DNS/
 
 ## ライセンス
 
-AGPL-3.0
+`LicenseRef-Proprietary` 条文は [LICENSE-Proprietary](LICENSE-Proprietary)
+
+Enquiries: https://extoria.co.jp/
 
 ## 作者
 

@@ -23,7 +23,8 @@ pub enum DnsAction {
     Allow,
     /// Return 0.0.0.0 / :: (blocked domain)
     Block,
-    /// Return spoof IP (blocked subdomain of whitelisted parent — anti-adblock bypass)
+    /// Return the spoof address. Not reached by `check_domain` today: a domain whose parent is whitelisted
+    /// returns `Allow` in the whitelist pass before the blocklist is consulted
     Spoof,
 }
 
@@ -174,10 +175,12 @@ impl DnsBloomEngine {
     ///
     /// # Algorithm
     ///
-    /// 0. Check whitelist (exact match) — if whitelisted, Allow immediately
+    /// 0. Walk the domain hierarchy against the whitelist — the domain or any parent whitelisted → Allow
+    ///    (e.g. `0.html-load.com` with `html-load.com` whitelisted is allowed, even if `html-load.com` is
+    ///    also on the blocklist)
     /// 1. Walk domain hierarchy with Bloom filter + `HashSet`
-    /// 2. If blocked AND the matching blocklist entry is also whitelisted → Spoof
-    ///    (e.g. `0.html-load.com` blocked via parent `html-load.com` which is whitelisted)
+    /// 2. If blocked AND the matching blocklist entry is also whitelisted → Spoof (step 0 has already
+    ///    returned Allow for every such domain, so this branch is not reached today)
     /// 3. If blocked normally → Block
     /// 4. Not blocked → Allow
     #[inline(always)]
@@ -486,6 +489,17 @@ mod tests {
         let engine = DnsBloomEngine::new();
         // 512KB = 524288バイト
         assert_eq!(engine.bloom_size_bytes(), 524_288);
+    }
+
+    #[test]
+    fn test_whitelisted_parent_is_allowed_before_the_blocklist() {
+        // the current order: the whitelist pass answers first, so a blocked domain under a whitelisted
+        // parent is allowed, not spoofed
+        let mut engine = DnsBloomEngine::new();
+        engine.load_domains(&["html-load.com".into()]);
+        engine.load_whitelist(&["html-load.com".into()]);
+        assert_eq!(engine.check_domain("0.html-load.com"), DnsAction::Allow);
+        assert_eq!(engine.check_domain("html-load.com"), DnsAction::Allow);
     }
 
     #[test]

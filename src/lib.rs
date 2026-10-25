@@ -20,7 +20,7 @@
 
 //! # ALICE-DNS — Bloom Filter DNS Ad-Blocker
 //!
-//! Lightweight Pi-hole replacement for Raspberry Pi.
+//! Lightweight Pi-hole replacement for ARM64 single-board computers.
 //!
 //! ## Architecture
 //!

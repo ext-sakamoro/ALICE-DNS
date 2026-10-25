@@ -3,10 +3,10 @@ name = "alice-dns"
 version = "0.2.0"
 edition = "2021"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
-description = "ALICE DNS Ad-Blocker — Bloom Filter O(1) domain blocking for Raspberry Pi"
+description = "ALICE DNS Ad-Blocker — Bloom Filter O(1) domain blocking for ARM64 single-board computers"
 license = "LicenseRef-Proprietary"
 repository = "https://github.com/ext-sakamoro/ALICE-DNS"
-keywords = ["dns", "adblock", "bloom-filter", "raspberry-pi", "privacy"]
+keywords = ["dns", "adblock", "bloom-filter", "arm64", "privacy"]
 categories = ["network-programming", "command-line-utilities"]
 publish = false
 

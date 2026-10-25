@@ -93,11 +93,11 @@ jobs:
 
             | File | Platform | Architecture |
             |------|----------|-------------|
-            | `alice-dns-aarch64-linux` | Linux (Raspberry Pi) | ARM64 / aarch64 |
+            | `alice-dns-aarch64-linux` | Linux (ARM64 single-board computers) | ARM64 / aarch64 |
             | `alice-dns-x86_64-linux` | Linux (x86_64) | x86_64 |
             | `alice-dns-aarch64-macos` | macOS (Apple Silicon) | ARM64 / aarch64 |
 
-            ### Quick Install (Raspberry Pi)
+            ### Quick Install (aarch64 Linux)
 
             ```bash
             curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns

@@ -4,7 +4,7 @@
 
 [English README](README.md)
 
-ALICE-DNS は Raspberry Pi 向けの超軽量 DNS 広告ブロッカーです。Pi-hole を単一の Rust バイナリで置き換えます。512KB の Bloom Filter による O(1) ドメイン検索と、ALICE-Cache によるインテリジェントな DNS レスポンスキャッシュを備えています。
+ALICE-DNS は ARM64 シングルボードコンピュータ向けの超軽量 DNS 広告ブロッカーです。Pi-hole を単一の Rust バイナリで置き換えます。512KB の Bloom Filter による O(1) ドメイン検索と、ALICE-Cache によるインテリジェントな DNS レスポンスキャッシュを備えています。
 
 ## アーキテクチャ
 
@@ -35,15 +35,15 @@ ALICE-DNS は Raspberry Pi 向けの超軽量 DNS 広告ブロッカーです。
 
 ## ベンチマーク: Pi-hole vs ALICE-DNS (実機計測)
 
-Raspberry Pi 5 での実測値（2026-02-17）。Pi-hole v6.3 (FTL v6.4.1) を ALICE-DNS で置き換えた結果です。
+ARM64 シングルボードコンピュータでの実測値（2026-02-17）。Pi-hole v6.3 (FTL v6.4.1) を ALICE-DNS で置き換えた結果です。
 
 **計測環境:**
 
 | 項目 | 詳細 |
 |------|------|
-| ハードウェア | Raspberry Pi 5 (Cortex-A76 クアッドコア, 16GB RAM) |
+| ハードウェア | ARM64 シングルボードコンピュータ (Cortex-A76 クアッドコア, 16GB RAM) |
 | ストレージ | 128GB microSD (SD128) |
-| OS | Raspberry Pi OS (Debian Bookworm, aarch64) |
+| OS | Debian Bookworm (aarch64) |
 | カーネル | Linux 6.12.25 |
 | 置き換え対象 | Pi-hole v6.3 / FTL v6.4.1 |
 | ブロックリスト | StevenBlack/hosts (unified hosts) |
@@ -65,9 +65,9 @@ Raspberry Pi 5 での実測値（2026-02-17）。Pi-hole v6.3 (FTL v6.4.1) を A
 | **CPU使用率** | 1-3% | **0.0%** | ほぼゼロ |
 | **依存関係** | C + SQLite + PHP + lighttpd | **Rust のみ** | ランタイム依存ゼロ |
 | **DDR バイパス防御** | なし | **あり** | DoH発見を阻止 |
-| **ビルド時間 (Pi 5)** | N/A | **12秒** | ソースから |
+| **ビルド時間 (Cortex-A76)** | N/A | **12秒** | ソースから |
 
-### テスト結果 (Raspberry Pi 5 実測)
+### テスト結果 (ARM64 シングルボードコンピュータ実測)
 
 ポート53で稼働中の ALICE-DNS に対して `dig @127.0.0.1` で計測。
 
@@ -101,15 +101,15 @@ curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install
 手動でインストールする場合:
 
 ```bash
-# Raspberry Pi (aarch64) 用ビルド済みバイナリをダウンロード
+# aarch64 Linux 用ビルド済みバイナリをダウンロード
 curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns
 chmod +x alice-dns
 sudo ./alice-dns
 ```
 
-## Raspberry Pi 導入ガイド (ソースからビルド)
+## ARM64 導入ガイド (ソースからビルド)
 
-Raspberry Pi 上でゼロからビルド・本番投入するまでの完全手順です。Pi 5 で実証済み。
+ARM64 シングルボードコンピュータ上でゼロからビルド・本番投入するまでの完全手順です。Cortex-A76 クアッドコアの機体で実証済み。
 
 ### Step 1: Rust インストール (初回のみ)
 
@@ -139,7 +139,7 @@ git clone https://github.com/ext-sakamoro/ALICE-Cache.git
 ```bash
 cd ~/ALICE-DNS
 cargo build --release
-# Pi 5: 約19秒、Pi 4: 約60秒 (目安)
+# Cortex-A76 クアッドコア: 約19秒、Cortex-A72 クアッドコア: 約60秒 (目安)
 
 # 確認
 ls -lh target/release/alice-dns
@@ -250,7 +250,7 @@ sudo systemctl start pihole-FTL
 
 ## ビルド方法 (その他)
 
-### Raspberry Pi 上でビルド (推奨)
+### 対象の ARM64 機上でビルド (推奨)
 
 ```bash
 # Rust インストール (初回のみ)
@@ -261,7 +261,7 @@ source ~/.cargo/env
 git clone https://github.com/ext-sakamoro/ALICE-DNS.git
 git clone https://github.com/ext-sakamoro/ALICE-Cache.git
 
-# ビルド (リリース, Pi 5 で約19秒)
+# ビルド (リリース, Cortex-A76 クアッドコアで約19秒)
 cd ALICE-DNS
 cargo build --release
 
@@ -276,7 +276,7 @@ rustup target add aarch64-unknown-linux-gnu
 cargo build --release --target aarch64-unknown-linux-gnu
 
 # Pi に転送
-scp target/aarch64-unknown-linux-gnu/release/alice-dns pi@raspberrypi:~/
+scp target/aarch64-unknown-linux-gnu/release/alice-dns <user>@<host>:~/
 ```
 
 ## インストール (自動)
@@ -349,7 +349,7 @@ ALICE-DNS/
 │   ├── blocklist.rs        # StevenBlack/hosts 形式パーサー
 │   └── stats.rs            # クエリ統計 (オプション: ALICE-Analytics)
 ├── update-blocklist.py     # cron ブロックリスト更新スクリプト (Python)
-├── install.sh              # Raspberry Pi インストーラー
+├── install.sh              # aarch64 Linux インストーラー
 ├── README.md               # 英語版
 └── README_ja.md            # 日本語版 (本ファイル)
 ```

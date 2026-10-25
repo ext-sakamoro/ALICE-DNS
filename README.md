@@ -4,7 +4,7 @@
 
 [日本語版 README はこちら](README_ja.md)
 
-ALICE-DNS is an ultra-lightweight DNS ad-blocker for Raspberry Pi that replaces Pi-hole with a single Rust binary. It uses a 512KB Bloom filter for O(1) domain lookup, backed by ALICE-Cache for intelligent DNS response caching.
+ALICE-DNS is an ultra-lightweight DNS ad-blocker for ARM64 single-board computers that replaces Pi-hole with a single Rust binary. It uses a 512KB Bloom filter for O(1) domain lookup, backed by ALICE-Cache for intelligent DNS response caching.
 
 ## Architecture
 
@@ -35,15 +35,15 @@ ALICE-DNS is an ultra-lightweight DNS ad-blocker for Raspberry Pi that replaces 
 
 ## Benchmark: Pi-hole vs ALICE-DNS (Measured on Real Hardware)
 
-Actual measurements on Raspberry Pi 5 (2026-02-17). Results from replacing Pi-hole v6.3 (FTL v6.4.1) with ALICE-DNS.
+Actual measurements on an ARM64 single-board computer (2026-02-17). Results from replacing Pi-hole v6.3 (FTL v6.4.1) with ALICE-DNS.
 
 **Test Environment:**
 
 | Item | Detail |
 |------|--------|
-| Hardware | Raspberry Pi 5 (Cortex-A76 quad-core, 16GB RAM) |
+| Hardware | ARM64 single-board computer (Cortex-A76 quad-core, 16GB RAM) |
 | Storage | 128GB microSD (SD128) |
-| OS | Raspberry Pi OS (Debian Bookworm, aarch64) |
+| OS | Debian Bookworm (aarch64) |
 | Kernel | Linux 6.12.25 |
 | Replaced | Pi-hole v6.3 / FTL v6.4.1 |
 | Blocklist | StevenBlack/hosts (unified hosts) |
@@ -65,9 +65,9 @@ Actual measurements on Raspberry Pi 5 (2026-02-17). Results from replacing Pi-ho
 | **CPU usage** | 1-3% | **0.0%** | Near zero |
 | **Dependencies** | C + SQLite + PHP + lighttpd | **Rust only** | Zero runtime deps |
 | **DDR bypass protection** | No | **Yes** | Blocks DoH discovery |
-| **Build time (Pi 5)** | N/A | **12 sec** | From source |
+| **Build time (Cortex-A76)** | N/A | **12 sec** | From source |
 
-### Test Results (Raspberry Pi 5, Actual Measurement)
+### Test Results (ARM64 single-board computer, Actual Measurement)
 
 Measured with `dig @127.0.0.1` against ALICE-DNS running on port 53.
 
@@ -101,15 +101,15 @@ curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install
 Or manually:
 
 ```bash
-# Download pre-built binary for Raspberry Pi (aarch64)
+# Download pre-built binary for aarch64 Linux
 curl -fsSL https://github.com/ext-sakamoro/ALICE-DNS/releases/latest/download/alice-dns-aarch64-linux -o alice-dns
 chmod +x alice-dns
 sudo ./alice-dns
 ```
 
-## Raspberry Pi Deployment Guide (Build from Source)
+## ARM64 Deployment Guide (Build from Source)
 
-Complete guide to build and deploy from scratch on a Raspberry Pi. Verified on Pi 5.
+Complete guide to build and deploy from scratch on an ARM64 single-board computer. Verified on a Cortex-A76 quad-core board.
 
 ### Step 1: Install Rust (one-time)
 
@@ -139,7 +139,7 @@ git clone https://github.com/ext-sakamoro/ALICE-Cache.git
 ```bash
 cd ~/ALICE-DNS
 cargo build --release
-# Pi 5: ~19 sec, Pi 4: ~60 sec (estimate)
+# Cortex-A76 quad-core: ~19 sec, Cortex-A72 quad-core: ~60 sec (estimate)
 
 # Verify
 ls -lh target/release/alice-dns
@@ -250,7 +250,7 @@ sudo systemctl start pihole-FTL
 
 ## Build (Alternative Methods)
 
-### On Raspberry Pi (recommended)
+### On the target ARM64 machine (recommended)
 
 ```bash
 # Install Rust (one-time)
@@ -261,7 +261,7 @@ source ~/.cargo/env
 git clone https://github.com/ext-sakamoro/ALICE-DNS.git
 git clone https://github.com/ext-sakamoro/ALICE-Cache.git
 
-# Build (release, ~19 sec on Pi 5)
+# Build (release, ~19 sec on a Cortex-A76 quad-core)
 cd ALICE-DNS
 cargo build --release
 
@@ -276,7 +276,7 @@ rustup target add aarch64-unknown-linux-gnu
 cargo build --release --target aarch64-unknown-linux-gnu
 
 # Transfer to Pi
-scp target/aarch64-unknown-linux-gnu/release/alice-dns pi@raspberrypi:~/
+scp target/aarch64-unknown-linux-gnu/release/alice-dns <user>@<host>:~/
 ```
 
 ## Install (Automated)
@@ -349,7 +349,7 @@ ALICE-DNS/
 │   ├── blocklist.rs        # StevenBlack/hosts format parser
 │   └── stats.rs            # Query statistics (optional: ALICE-Analytics)
 ├── update-blocklist.py     # Cron blocklist updater (Python)
-├── install.sh              # Raspberry Pi installer
+├── install.sh              # aarch64 Linux installer
 ├── README.md               # English
 └── README_ja.md            # Japanese
 ```

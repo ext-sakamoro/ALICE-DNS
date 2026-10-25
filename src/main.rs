@@ -1,4 +1,4 @@
-//! ALICE-DNS — Bloom Filter DNS Ad-Blocker for Raspberry Pi
+//! ALICE-DNS — Bloom Filter DNS Ad-Blocker for ARM64 single-board computers
 //!
 //! Replaces Pi-hole with a 2MB Rust binary.
 //!

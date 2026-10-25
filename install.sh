@@ -1,5 +1,5 @@
 #!/bin/bash
-# ALICE-DNS Installer for Raspberry Pi
+# ALICE-DNS Installer for aarch64 Linux
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ext-sakamoro/ALICE-DNS/main/install.sh | sudo bash

@@ -4,6 +4,10 @@ All notable changes to ALICE-DNS will be documented in this file.
 
 ## [Unreleased]
 
+### 破壊的変更
+
+- `--spoof-ip` に既定値が無くなった neutralize mode、または blocklist と whitelist の両方にある domain (spoof で応答する domain) があるのに `--spoof-ip` が無いと、flag を名指しする error で起動しない (SIGHUP の reload も同じ条件で拒否し、元の list のまま動く) 以前は固定の LAN 内 address を既定で返していた
+
 ### Changed
 
 - `alice-sign` の git rev を 8a1b00d に上げた (HMAC-SHA256 の追加のみ、使っている API と byte 列は同じ)

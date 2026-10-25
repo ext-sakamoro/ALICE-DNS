@@ -46,7 +46,7 @@ const DEFAULT_TLS_KEY: &str = "/etc/alice-dns/tls.key";
 enum BlockMode {
     /// Traditional: return 0.0.0.0 for blocked domains.
     Block,
-    /// Neutralize: return Pi's IP + serve empty HTTP content.
+    /// Neutralize: return the spoof address + serve empty HTTP content.
     /// Anti-adblock bypass: DNS resolves, clicks are prevented.
     Neutralize,
 }
@@ -56,13 +56,37 @@ struct Config {
     blocklist_path: PathBuf,
     filter_bin_path: PathBuf,
     whitelist_path: PathBuf,
-    spoof_ip: [u8; 4],
+    spoof_ip: Option<[u8; 4]>,
     upstream_resolvers: Vec<UpstreamResolver>,
     block_mode: BlockMode,
     null_http_port: u16,
     null_https_port: u16,
     tls_cert_path: String,
     tls_key_path: String,
+}
+
+/// The spoof address the server answers with, checked against what needs one: neutralize mode answers every
+/// blocked domain with it, and a domain on both the blocklist and the whitelist is answered with it. Either one
+/// without `--spoof-ip` is an error (there is no default address).
+fn required_spoof_ip(
+    block_mode: BlockMode,
+    spoof_domains: usize,
+    spoof_ip: Option<[u8; 4]>,
+) -> Result<Option<[u8; 4]>, String> {
+    if spoof_ip.is_some() {
+        return Ok(spoof_ip);
+    }
+    if block_mode == BlockMode::Neutralize {
+        return Err(
+            "neutralize mode needs --spoof-ip <IP> (the address blocked domains resolve to)".into(),
+        );
+    }
+    if spoof_domains > 0 {
+        return Err(format!(
+            "{spoof_domains} domain(s) are on both the blocklist and the whitelist and are answered with the spoof address: pass --spoof-ip <IP>"
+        ));
+    }
+    Ok(None)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -73,7 +97,7 @@ fn parse_args() -> Config {
         blocklist_path: PathBuf::from(DEFAULT_BLOCKLIST),
         filter_bin_path: PathBuf::from(DEFAULT_FILTER_BIN),
         whitelist_path: PathBuf::from(DEFAULT_WHITELIST),
-        spoof_ip: [192, 168, 11, 7], // Default: Raspberry Pi's LAN IP
+        spoof_ip: None,
         upstream_resolvers: vec![
             UpstreamResolver {
                 addr: "1.1.1.1:53".into(),
@@ -143,7 +167,7 @@ fn parse_args() -> Config {
                             parts[2].parse::<u8>(),
                             parts[3].parse::<u8>(),
                         ) {
-                            config.spoof_ip = [a, b, c, d];
+                            config.spoof_ip = Some([a, b, c, d]);
                         }
                     }
                 }
@@ -216,7 +240,7 @@ fn print_help() {
     println!("  -w, --whitelist <PATH>     Whitelist file path (one domain per line)");
     println!("  -u, --upstream <ADDR,...>   Upstream DNS (default: 1.1.1.1,8.8.8.8)");
     println!(
-        "  -s, --spoof-ip <IP>        Spoof IP for anti-adblock bypass (default: 192.168.11.7)"
+        "  -s, --spoof-ip <IP>        Address neutralized and spoofed domains resolve to (no default; required for neutralize mode and when spoofed domains are configured)"
     );
     println!("  -m, --mode <MODE>          block (default) or neutralize");
     println!(
@@ -347,6 +371,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     load_blocklist(&mut bloom_engine, &config);
     load_whitelist(&mut bloom_engine, &config);
     println!();
+    let spoof_ip = required_spoof_ip(
+        config.block_mode,
+        bloom_engine.spoof_domain_count(),
+        config.spoof_ip,
+    )?;
 
     // ── Initialize Upstream Forwarder ──
     println!("━━━ Upstream DNS ━━━");
@@ -468,14 +497,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         BlockMode::Neutralize => "neutralize (spoof IP + HTTP null)",
     };
     println!(
-        "ALICE-DNS is ready. {} blocked, {} whitelisted, mode: {}, spoof IP: {}.{}.{}.{}",
+        "ALICE-DNS is ready. {} blocked, {} whitelisted, mode: {}, spoof IP: {}",
         bloom_engine.domain_count(),
         bloom_engine.whitelist_count(),
         mode_str,
-        config.spoof_ip[0],
-        config.spoof_ip[1],
-        config.spoof_ip[2],
-        config.spoof_ip[3]
+        spoof_ip.map_or_else(
+            || "-".to_string(),
+            |ip| format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3])
+        )
     );
     println!("Send SIGHUP to reload, SIGUSR1 for stats, SIGTERM to stop.");
     println!();
@@ -494,13 +523,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if reload_flag.load(Ordering::Relaxed) {
             reload_flag.store(false, Ordering::Relaxed);
             println!("\nReloading blocklist + whitelist...");
-            load_blocklist(&mut bloom_engine, &config);
-            load_whitelist(&mut bloom_engine, &config);
-            println!(
-                "Reload complete. {} blocked, {} whitelisted.",
-                bloom_engine.domain_count(),
-                bloom_engine.whitelist_count()
-            );
+            // the new lists are checked before they replace the running ones: a reload that would need a spoof
+            // address the server was not started with is refused, and the previous lists stay
+            let mut fresh = DnsBloomEngine::new();
+            load_blocklist(&mut fresh, &config);
+            load_whitelist(&mut fresh, &config);
+            match required_spoof_ip(config.block_mode, fresh.spoof_domain_count(), spoof_ip) {
+                Ok(_) => {
+                    bloom_engine = fresh;
+                    println!(
+                        "Reload complete. {} blocked, {} whitelisted.",
+                        bloom_engine.domain_count(),
+                        bloom_engine.whitelist_count()
+                    );
+                }
+                Err(e) => eprintln!("Reload refused, the previous lists stay: {e}"),
+            }
         }
 
         if stats_flag.load(Ordering::Relaxed) {
@@ -542,8 +580,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         stats.record_query(&query.qname, true, latency);
                         if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
                             if config.block_mode == BlockMode::Neutralize {
-                                // NEUTRALIZE → spoof to Pi's IP (HTTP null server handles requests)
-                                dns::build_spoof_response(packet, &query, config.spoof_ip)
+                                // NEUTRALIZE → the spoof address (the HTTP null server handles requests);
+                                // required_spoof_ip makes neutralize mode start only with one
+                                match spoof_ip {
+                                    Some(ip) => dns::build_spoof_response(packet, &query, ip),
+                                    None => dns::build_blocked_response(packet, &query),
+                                }
                             } else {
                                 // BLOCK → 0.0.0.0 / :: (traditional)
                                 dns::build_blocked_response(packet, &query)
@@ -553,13 +595,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     DnsAction::Spoof => {
-                        // SPOOFED → return Pi's IP (anti-adblock bypass)
+                        // SPOOFED → the spoof address (anti-adblock bypass)
                         let latency = query_start.elapsed().as_micros() as u64;
                         stats.record_query(&query.qname, true, latency);
-                        if query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA {
-                            dns::build_spoof_response(packet, &query, config.spoof_ip)
-                        } else {
-                            dns::build_nxdomain_response(packet, &query)
+                        // required_spoof_ip (start and reload) keeps spoofed domains out unless a spoof address is set
+                        match (
+                            spoof_ip,
+                            query.qtype == dns::QTYPE_A || query.qtype == dns::QTYPE_AAAA,
+                        ) {
+                            (Some(ip), true) => dns::build_spoof_response(packet, &query, ip),
+                            _ => dns::build_nxdomain_response(packet, &query),
                         }
                     }
                     DnsAction::Allow => {
@@ -665,5 +710,34 @@ mod libc {
     pub type sighandler_t = usize;
     extern "C" {
         pub fn signal(sig: i32, handler: sighandler_t) -> sighandler_t;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{required_spoof_ip, BlockMode};
+
+    #[test]
+    fn neutralize_without_spoof_ip_refuses_and_names_the_flag() {
+        let e = required_spoof_ip(BlockMode::Neutralize, 0, None).unwrap_err();
+        assert!(e.contains("--spoof-ip"), "{e}");
+    }
+
+    #[test]
+    fn spoofed_domains_without_spoof_ip_refuse_and_name_the_flag() {
+        let e = required_spoof_ip(BlockMode::Block, 3, None).unwrap_err();
+        assert!(e.contains("--spoof-ip") && e.contains('3'), "{e}");
+    }
+
+    #[test]
+    fn nothing_to_spoof_needs_no_address() {
+        assert_eq!(required_spoof_ip(BlockMode::Block, 0, None), Ok(None));
+    }
+
+    #[test]
+    fn a_given_address_is_used_as_is() {
+        let ip = Some([192, 0, 2, 7]);
+        assert_eq!(required_spoof_ip(BlockMode::Neutralize, 0, ip), Ok(ip));
+        assert_eq!(required_spoof_ip(BlockMode::Block, 5, ip), Ok(ip));
     }
 }

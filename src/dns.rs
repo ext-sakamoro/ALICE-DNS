@@ -416,7 +416,7 @@ mod tests {
     fn test_spoof_response_ipv4() {
         let pkt = build_test_query("spoofed.example.com", QTYPE_A);
         let query = parse_query(&pkt).unwrap();
-        let spoof_ip = [192, 168, 1, 100];
+        let spoof_ip = [192, 0, 2, 100];
         let resp = build_spoof_response(&pkt, &query, spoof_ip);
 
         // 最後の4バイトがスプーフIPアドレス

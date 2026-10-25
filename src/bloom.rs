@@ -263,6 +263,16 @@ impl DnsBloomEngine {
         self.whitelist.len()
     }
 
+    /// The number of whitelisted domains that are also on the blocklist: the domains the server answers
+    /// with the spoof address (`DnsAction::Spoof`).
+    #[must_use]
+    pub fn spoof_domain_count(&self) -> usize {
+        self.whitelist
+            .iter()
+            .filter(|d| self.domains.contains(d.as_str()))
+            .count()
+    }
+
     pub const fn reset_stats(&mut self) {
         self.queries_total = 0;
         self.queries_blocked = 0;
@@ -476,6 +486,15 @@ mod tests {
         let engine = DnsBloomEngine::new();
         // 512KB = 524288バイト
         assert_eq!(engine.bloom_size_bytes(), 524_288);
+    }
+
+    #[test]
+    fn test_spoof_domain_count_is_blocklist_and_whitelist_overlap() {
+        let mut engine = DnsBloomEngine::new();
+        engine.load_domains(&["ads.example.com".into(), "html-load.com".into()]);
+        assert_eq!(engine.spoof_domain_count(), 0);
+        engine.load_whitelist(&["html-load.com".into(), "other.example".into()]);
+        assert_eq!(engine.spoof_domain_count(), 1);
     }
 
     #[test]

@@ -5,6 +5,7 @@ All notable changes to ALICE-DNS will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- 依存: alice-cache (path から)・alice-analytics・alice-sign (rev 固定から) を git の branch = main + version で引く (`Cargo.lock` が commit を固定する、alice-det-math は 1 つ) CI の ALICE-Cache を隣に checkout する手順と release の clone を消し、lock の出所 (alice-* は全て git、path / registry 0、alice-det-math 1 つ以下) を検査する step を足した `scripts/preflight.sh` を生成し直した
 
 - `alice-sign` の git rev を 8a1b00d に上げた (HMAC-SHA256 の追加のみ、使っている API と byte 列は同じ)
 - Ed25519 の署名・検証を `alice-blockchain` から `alice-sign` (MIT OR Apache-2.0、公開) に移した 鍵・署名の byte 列は同じ (`alice-sign` の golden で固定) `alice-blockchain` への依存は無くなった

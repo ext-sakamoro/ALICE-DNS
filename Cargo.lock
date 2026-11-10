@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "alice-analytics"
 version = "0.7.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?rev=f3a58e3acd486441ae1c70efbaff6acdbbfdeed9#f3a58e3acd486441ae1c70efbaff6acdbbfdeed9"
+source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?branch=main#6ef41bc5abd923ec2fdd47618f8f2ac7d6b7b707"
 dependencies = [
  "alice-det-math",
  "libm",
@@ -14,6 +14,7 @@ dependencies = [
 [[package]]
 name = "alice-cache"
 version = "0.2.0"
+source = "git+https://github.com/ext-sakamoro/ALICE-Cache?branch=main#91beadca76414f3bda69514f5502a28671d0ddb3"
 dependencies = [
  "hashbrown",
  "parking_lot",
@@ -23,8 +24,8 @@ dependencies = [
 
 [[package]]
 name = "alice-det-math"
-version = "0.5.2"
-source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=6384856c8b00f1615e1cd6b5c74d88036c1a8706#6384856c8b00f1615e1cd6b5c74d88036c1a8706"
+version = "0.6.1"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#95934099bfe6aa31296633ac35b023ed74878791"
 
 [[package]]
 name = "alice-dns"
@@ -41,7 +42,7 @@ dependencies = [
 [[package]]
 name = "alice-sign"
 version = "0.1.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Sign?rev=8a1b00d800082187a8693732a9ffb806c98814e7#8a1b00d800082187a8693732a9ffb806c98814e7"
+source = "git+https://github.com/ext-sakamoro/ALICE-Sign?branch=main#8c8d1eebf4ef9fc4059dae08779f8846e832df5e"
 dependencies = [
  "ed25519-dalek",
  "sha2",

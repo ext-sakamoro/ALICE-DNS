@@ -18,17 +18,24 @@ jobs:
       # fewer passed tests (a removed or skipped test, or none at all) is a failure
       MIN_PASSED: "156"
     steps:
-      # cargo reads the manifest of every path dependency, so ALICE-Cache is checked
-      # out next to this repository at a fixed commit
       - uses: actions/checkout@v5
         with:
           path: ALICE-DNS
-      - uses: actions/checkout@v5
-        with:
-          repository: ext-sakamoro/ALICE-Cache
-          ref: 48ffb79d85e0ce272dfc35921da611026423e8d3
-          path: ALICE-Cache
       - uses: dtolnay/rust-toolchain@stable
+      - name: Lock (every alice-* from git, none by path or from a registry, at most one alice-det-math)
+        working-directory: ALICE-DNS
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sys, tomllib
+          pk = [p for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"].startswith("alice")]
+          bad = [f'{p["name"]} {p["version"]} {p.get("source", "path")}' for p in pk
+                 if p["name"] != "alice-dns" and not p.get("source", "").startswith("git+")]
+          dm = [p for p in pk if p["name"] == "alice-det-math"]
+          print(f"lock: {len(pk) - 1} alice-* dependencies, {len(bad)} not from git, {len(dm)} alice-det-math")
+          if len(pk) < 2 or bad or len(dm) > 1:
+              sys.exit("\n".join(bad) or "expected an alice-* dependency and at most one alice-det-math")
+          PY
       - name: Test (lib, integration, doctests)
         working-directory: ALICE-DNS
         run: |
@@ -52,16 +59,9 @@ jobs:
     name: Clippy (all targets, all features, pedantic, -D warnings)
     runs-on: ubuntu-latest
     steps:
-      # cargo reads the manifest of every path dependency, so ALICE-Cache is checked
-      # out next to this repository at a fixed commit
       - uses: actions/checkout@v5
         with:
           path: ALICE-DNS
-      - uses: actions/checkout@v5
-        with:
-          repository: ext-sakamoro/ALICE-Cache
-          ref: 48ffb79d85e0ce272dfc35921da611026423e8d3
-          path: ALICE-Cache
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

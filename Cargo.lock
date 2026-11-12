@@ -14,7 +14,7 @@ dependencies = [
 [[package]]
 name = "alice-cache"
 version = "0.2.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Cache?branch=main#91beadca76414f3bda69514f5502a28671d0ddb3"
+source = "git+https://github.com/ext-sakamoro/ALICE-Cache?branch=main#2bae381bf66dc0cfe29f71ca3e4c5b89c4c26c33"
 dependencies = [
  "hashbrown",
  "parking_lot",

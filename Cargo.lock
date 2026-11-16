@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "alice-analytics"
 version = "0.7.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?branch=main#6ef41bc5abd923ec2fdd47618f8f2ac7d6b7b707"
+source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?branch=main#22eb80532d5df3717595b54e15377884827ceec6"
 dependencies = [
  "alice-det-math",
  "libm",
@@ -25,7 +25,7 @@ dependencies = [
 [[package]]
 name = "alice-det-math"
 version = "0.6.1"
-source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#95934099bfe6aa31296633ac35b023ed74878791"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#9b6538aab2f166ae0afb5b806ae8611b89cad5dd"
 
 [[package]]
 name = "alice-dns"
